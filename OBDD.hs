@@ -32,7 +32,8 @@ data Element = Dis { evars :: S.Set VarId,
 -- obdd's should keep the variable order
 data OBDD =
   OBDD { nodes :: M.Map NodeId (VarId, NodeId, NodeId)
-       , entry :: NodeId }
+       , entry :: NodeId
+       , order :: [VarId]}
 
 
 type NodeId = Int
@@ -44,8 +45,7 @@ obddTest ic = mapM_ printPretty $ build $ map mkDis $ toDimacs ic
   where mkDis clause = Dis (S.fromList $ map abs clause) clause
 
 build :: [Element] -> [Element]
-build es = undefined
-{-
+build es =
   concat
   [ case ov of
        Single a -> [a]
@@ -54,15 +54,15 @@ build es = undefined
   where combine (Dis as a) (Dis bs b) =
           [ Dis as a, Dis bs b
           , Obdd (S.union as bs) (mkObdd [a, b])]
--}
 
 type Mkstate = (Int, M.Map (VarId,NodeId,NodeId) NodeId)
 
--- mkObdd :: [Clause] -> OBDD
+mkObdd :: [Clause] -> OBDD
 mkObdd cs =
   let ((_,rnodes), entry) =
         mk (2, M.empty) (Just $ fromDimacs cs) order
   in OBDD { entry = entry
+          , order = order
           , nodes = M.fromList [ (id, node)
                                | (node,id) <- M.toList rnodes ]}
   where order =
@@ -78,7 +78,7 @@ mkObdd cs =
               (st2,l) = desc st1 Positive
               (st3,r) = desc st2 Negative
           in mkNode st3 v l r
-        mkNode :: Mkstate -> VarId -> NodeId -> NodeId -> (Mkstate, Int)
+        mkNode st _ l r | l == r = (st, l)
         mkNode st1@(nextId, allocated) v l r =
           let nd = (v, l, r) :: (VarId, NodeId, NodeId)
           in case M.lookup nd allocated of
@@ -93,23 +93,20 @@ printPretty :: Pretty a => a -> IO ()
 printPretty = putStrLn . prettyShow
 
 instance Pretty OBDD where
-  pPrint (OBDD nodes entry) =
+  pPrint (OBDD nodes entry order) =
     let nd 0 = "0"
         nd 1 = "1"
         nd x = [chr $ 97 + x - 2]
         desc [] = []
-        desc ns =
+        desc (v:vs) =
           (fsep
            [ text $
              nd node ++ "="
              ++ show var ++ "->" ++ nd l ++ ";" ++ nd r
-           | node <- ns , node >= 2
-           , let (var, l, r) = nodes M.! node ])
-          : (desc $ S.toList $ S.fromList $ concat
-             [ [l,r]
-             | node <- ns , node >= 2
-             , let (_, l, r) = nodes M.! node ])
-    in parens $ sep $ desc [entry]
+           | (node, (var, l, r)) <- M.toList nodes
+           , var == v ])
+          : desc vs
+    in parens $ sep $ desc order
 
 
 instance Pretty Element where

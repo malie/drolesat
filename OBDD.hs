@@ -24,10 +24,12 @@ import IndexedCNF ( IndexedCNF , toDimacs , numClauses
 import MostOverlapping ( mostOverlapping , SP(Single, Pair))
 
 
-data Element = Dis { evars :: S.Set VarId,
-                     eclause :: Clause }
-             | Obdd { evars :: S.Set VarId,
-                      eobdd :: OBDD }
+data Element = Dis { evars :: S.Set VarId
+                   , eclause :: Clause }
+             | Clauses { evars :: S.Set VarId
+                       , eclauses :: [Clause] }
+             | Obdd { evars :: S.Set VarId
+                    , eobdd :: OBDD }
 
 -- obdd's should keep the variable order
 data OBDD =
@@ -41,35 +43,48 @@ type NodeId = Int
 -- 1 reserved for true
 
 obddTest :: IndexedCNF -> IO ()
-obddTest ic = mapM_ printPretty $ build $ map mkDis $ toDimacs ic
+obddTest ic = mapM_ printPretty $ build $
+              map mkClauses $ toDimacs ic
   where mkDis clause = Dis (S.fromList $ map abs clause) clause
+        mkClauses clause =
+          Clauses (S.fromList $ map abs clause) [clause]
 
 build :: [Element] -> [Element]
-build es =
-  concat
-  [ case ov of
-       Single a -> [a]
-       Pair a b -> combine a b
-  | ov <- mostOverlapping evars es ]
-  where combine (Dis as a) (Dis bs b) =
-          [ Dis as a, Dis bs b
-          , Obdd (S.union as bs) (mkObdd [a, b])]
+build es = recur 4 es
+  where combine1 (Clauses as a) (Clauses bs b) =
+          Clauses (S.union as bs) (a ++ b)
+        recur 0 es =
+          concat
+          [ [c, Obdd as (mkObdd a)]
+          | c@(Clauses as a) <- es]
+        recur n es = recur (pred n) $
+                     concat
+                     [ case ov of
+                          Single a -> [a]
+                          Pair a b -> [combine1 a b]
+                     | ov <- mostOverlapping evars es ]
+
 
 type Mkstate = (Int, M.Map (VarId,NodeId,NodeId) NodeId)
 
 mkObdd :: [Clause] -> OBDD
-mkObdd cs =
+mkObdd cs = mkObddWithOrder cs order
+  where
+    order =
+      reverse $ map fst $ L.sortBy (comparing snd) $
+      M.toList $ M.unionsWith (+)
+      [ M.singleton (abs lit) 1 | cl <- cs , lit <- cl ]
+        
+
+mkObddWithOrder :: [Clause] -> [VarId] -> OBDD
+mkObddWithOrder cs order =
   let ((_,rnodes), entry) =
         mk (2, M.empty) (Just $ fromDimacs cs) order
   in OBDD { entry = entry
           , order = order
           , nodes = M.fromList [ (id, node)
                                | (node,id) <- M.toList rnodes ]}
-  where order =
-          reverse $ map fst $ L.sortBy (comparing snd) $
-          M.toList $ M.unionsWith (+)
-          [ M.singleton (abs lit) 1 | cl <- cs , lit <- cl ]
-        mk :: Mkstate -> Maybe IndexedCNF -> [VarId]
+  where mk :: Mkstate -> Maybe IndexedCNF -> [VarId]
               -> (Mkstate, NodeId)
         mk st Nothing _                  = (st,0)
         mk st (Just ic) _ | noClauses ic = (st,1)
@@ -86,7 +101,6 @@ mkObdd cs =
             Nothing ->
               let st2 = (succ nextId, M.insert nd nextId allocated)
               in (st2, nextId)
-          
 
 
 printPretty :: Pretty a => a -> IO ()
@@ -111,4 +125,6 @@ instance Pretty OBDD where
 
 instance Pretty Element where
   pPrint (Dis _ cl) = parens $ fsep $ map (text . show) cl
+  pPrint (Clauses _ cls) =
+    parens (sep $ map (parens . fsep . map (text . show)) cls)
   pPrint (Obdd _ d) = pPrint d

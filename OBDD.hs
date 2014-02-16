@@ -1,5 +1,6 @@
 module OBDD ( obddTest
             , mkObdd
+            , mkObddWithOrder
             , mostOverlapping
             , printPretty
             ) where
@@ -14,7 +15,8 @@ import Data.Char ( chr )
 
 -- package 'prettyclass'
 import Text.PrettyPrint.HughesPJClass
-  (text, fsep, sep, hang, parens, Pretty , pPrint , prettyShow )
+  ( text, fsep, sep, hang, parens, brackets
+  , Pretty , pPrint , prettyShow , Doc , comma , (<>))
 
 
 import Dimacs ( Dimacs , VarId , Clause )
@@ -50,7 +52,7 @@ obddTest ic = mapM_ printPretty $ build $
           Clauses (S.fromList $ map abs clause) [clause]
 
 build :: [Element] -> [Element]
-build es = recur 4 es
+build es = recur 8 es
   where combine1 (Clauses as a) (Clauses bs b) =
           Clauses (S.union as bs) (a ++ b)
         recur 0 es =
@@ -110,7 +112,12 @@ instance Pretty OBDD where
   pPrint (OBDD nodes entry order) =
     let nd 0 = "0"
         nd 1 = "1"
-        nd x = [chr $ 97 + x - 2]
+        nd x = recur $ x - 2
+        recur x
+          | x > 25    = recur (x `div` 26)
+                        ++ [letter $ x `mod` 26]
+          | otherwise = [letter x]
+        letter x = chr $ 97 + x
         desc [] = []
         desc (v:vs) =
           (fsep
@@ -126,5 +133,12 @@ instance Pretty OBDD where
 instance Pretty Element where
   pPrint (Dis _ cl) = parens $ fsep $ map (text . show) cl
   pPrint (Clauses _ cls) =
-    parens (sep $ map (parens . fsep . map (text . show)) cls)
+    flist (flist $ text . show) cls
   pPrint (Obdd _ d) = pPrint d
+
+flist :: (a -> Doc) -> [a] -> Doc
+flist f xs = brackets $ fsep $ recur xs
+  where recur []     = []
+        recur [x]    = [f x]
+        recur (x:xs) = f x <> comma : recur xs
+

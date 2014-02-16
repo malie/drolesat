@@ -45,19 +45,24 @@ type NodeId = Int
 -- 1 reserved for true
 
 obddTest :: IndexedCNF -> IO ()
-obddTest ic = mapM_ printPretty $ build $
-              map mkClauses $ toDimacs ic
+obddTest ic =
+  mapM_ printPretty $
+  -- build mkObdd $
+  build (mkObddWithOrderX globalOrder) $
+  map mkClauses $ toDimacs ic
   where mkDis clause = Dis (S.fromList $ map abs clause) clause
         mkClauses clause =
           Clauses (S.fromList $ map abs clause) [clause]
+        globalOrder = mostOccuringVarsFirstHeuristic $
+                      toDimacs ic
 
-build :: [Element] -> [Element]
-build es = recur 8 es
+build :: ([Clause] -> OBDD) -> [Element] -> [Element]
+build mkobdd es = recur 3 es
   where combine1 (Clauses as a) (Clauses bs b) =
           Clauses (S.union as bs) (a ++ b)
         recur 0 es =
           concat
-          [ [c, Obdd as (mkObdd a)]
+          [ [c, Obdd as (mkobdd a)]
           | c@(Clauses as a) <- es]
         recur n es = recur (pred n) $
                      concat
@@ -70,16 +75,27 @@ build es = recur 8 es
 type Mkstate = (Int, M.Map (VarId,NodeId,NodeId) NodeId)
 
 mkObdd :: [Clause] -> OBDD
-mkObdd cs = mkObddWithOrder cs order
-  where
-    order =
-      reverse $ map fst $ L.sortBy (comparing snd) $
-      M.toList $ M.unionsWith (+)
-      [ M.singleton (abs lit) 1 | cl <- cs , lit <- cl ]
+mkObdd cs = mkObddWithOrder
+            (mostOccuringVarsFirstHeuristic cs)
+            cs
+            
+
+mostOccuringVarsFirstHeuristic :: [Clause] -> [VarId]
+mostOccuringVarsFirstHeuristic clauses =
+  reverse $ map fst $ L.sortBy (comparing snd) $
+  M.toList $ M.unionsWith (+)
+  [ M.singleton (abs lit) 1 | cl <- clauses , lit <- cl ]
         
 
-mkObddWithOrder :: [Clause] -> [VarId] -> OBDD
-mkObddWithOrder cs order =
+-- build a obdd with a given var order,
+-- but first drop the unneeded variables
+mkObddWithOrderX :: [VarId] -> [Clause] -> OBDD
+mkObddWithOrderX order cs = mkObddWithOrder orderC cs
+  where mentioned = S.fromList $ map abs $ concat cs
+        orderC = filter (flip S.member mentioned) order
+
+mkObddWithOrder :: [VarId] -> [Clause] -> OBDD
+mkObddWithOrder order cs =
   let ((_,rnodes), entry) =
         mk (2, M.empty) (Just $ fromDimacs cs) order
   in OBDD { entry = entry

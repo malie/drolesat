@@ -6,6 +6,8 @@ module OBDD ( obddTest
             , mostOccuringVarsFirstHeuristic
             , mostOccuringPlusNeighboursHeuristic
             , printPretty
+            , conjoin
+            , variableOrderComparer
             ) where
 
 import qualified Data.List as L
@@ -22,13 +24,11 @@ import Text.PrettyPrint.HughesPJClass
   ( text, fsep, sep, hang, parens, brackets
   , Pretty , pPrint , prettyShow , Doc , comma , (<>))
 
-
 import Dimacs ( Dimacs , VarId , Clause )
 import IndexedCNF ( IndexedCNF , toDimacs , numClauses
                   , clausesWithVar , clauseLiterals
                   , assign , Sign(..) , fromDimacs , noClauses )
 import MostOverlapping ( mostOverlapping , SP(Single, Pair))
-
 
 data Element = Dis { evars :: S.Set VarId
                    , eclause :: Clause }
@@ -48,11 +48,11 @@ type NodeId = Int
 -- 0 reserved for false
 -- 1 reserved for true
 
-obddTest :: IndexedCNF -> IO ()
-obddTest ic =
+obddTest1 :: IndexedCNF -> IO ()
+obddTest1 ic =
   mapM_ printPretty $
-  build1 mkObdd $
-  -- build1 (mkObddWithOrderX globalOrder) $
+  -- build1 mkObdd $
+  build1 (mkObddWithOrderX globalOrder) $
   map mkClauses $ toDimacs ic
   where mkDis clause = Dis (S.fromList $ map abs clause) clause
         mkClauses clause =
@@ -132,6 +132,31 @@ midOutwards xs = merge (reverse $ take len xs) (drop len xs)
 
 type Mkstate = (Int, M.Map (VarId,NodeId,NodeId) NodeId)
 
+mkstateInitial :: Mkstate
+mkstateInitial = (2, M.empty)
+
+mkNode :: Mkstate -> VarId -> NodeId -> NodeId -> (Mkstate, NodeId)
+mkNode st _ l r | l == r = (st, l)
+mkNode st1@(nextId, allocated) v l r =
+  let nd = (v, l, r) :: (VarId, NodeId, NodeId)
+  in case M.lookup nd allocated of
+    Just id -> (st1, id)
+    Nothing ->
+      let st2 = (succ nextId, M.insert nd nextId allocated)
+      in (st2, nextId)
+
+consObddWithNodes :: NodeId
+                     -> [VarId]
+                     -> M.Map (VarId,NodeId,NodeId) NodeId
+                     -> OBDD
+consObddWithNodes entry order rnodes =
+   OBDD { entry = entry
+          , order = order
+          , nodes = M.fromList [ (id, node)
+                               | (node,id) <- M.toList rnodes ]}
+
+
+
 mkObdd :: [Clause] -> OBDD
 mkObdd cs = mkObddWithOrder
             -- (mostOccuringVarsFirstHeuristic cs)
@@ -169,7 +194,7 @@ mostOccuringPlusNeighboursHeuristic clauses =
 -- but first drop the unneeded variables
 mkObddWithOrderX :: [VarId] -> [Clause] -> OBDD
 mkObddWithOrderX order cs =
-  trace ("using order " ++ show orderC) $
+  -- trace ("using order " ++ show orderC) $
   mkObddWithOrder orderC cs
   where mentioned = S.fromList $ map abs $ concat cs
         orderC = filter (flip S.member mentioned) order
@@ -177,11 +202,8 @@ mkObddWithOrderX order cs =
 mkObddWithOrder :: [VarId] -> [Clause] -> OBDD
 mkObddWithOrder order cs =
   let ((_,rnodes), entry) =
-        mk (2, M.empty) (Just $ fromDimacs cs) order
-  in OBDD { entry = entry
-          , order = order
-          , nodes = M.fromList [ (id, node)
-                               | (node,id) <- M.toList rnodes ]}
+        mk mkstateInitial (Just $ fromDimacs cs) order
+  in consObddWithNodes entry order rnodes
   where mk :: Mkstate -> Maybe IndexedCNF -> [VarId]
               -> (Mkstate, NodeId)
         mk st Nothing _                  = (st,0)
@@ -191,14 +213,87 @@ mkObddWithOrder order cs =
               (st2,l) = desc st1 Positive
               (st3,r) = desc st2 Negative
           in mkNode st3 v l r
-        mkNode st _ l r | l == r = (st, l)
-        mkNode st1@(nextId, allocated) v l r =
-          let nd = (v, l, r) :: (VarId, NodeId, NodeId)
-          in case M.lookup nd allocated of
-            Just id -> (st1, id)
-            Nothing ->
-              let st2 = (succ nextId, M.insert nd nextId allocated)
-              in (st2, nextId)
+
+obddTest :: IndexedCNF -> IO ()
+obddTest ic =
+  do mapM_ printPretty $ join $ join $ join initial
+  where mkDis clause = Dis (S.fromList $ map abs clause) clause
+        obddForSingleClause cl = mkObddWithOrderX globalOrder [cl]
+        globalOrder = -- mostOccuringVarsFirstHeuristic $
+                      mostOccuringPlusNeighboursHeuristic $
+                      toDimacs ic
+        initial = map (mkElement . obddForSingleClause) $
+                  toDimacs ic
+        mkElement o@(OBDD _ _ ord) = Obdd (S.fromList ord) o
+        varcmp = variableOrderComparer globalOrder
+        join es = [ case ov of
+                       Single a -> a
+                       Pair a b ->
+                         Obdd (S.union (evars a) (evars b)) $
+                         conjoin varcmp globalOrder
+                         (eobdd a)
+                         (eobdd b)
+                  | ov <- mostOverlapping evars es ]
+
+type VariableOrderComparer = VarId -> VarId -> Ordering
+
+variableOrderComparer :: [VarId] -> VariableOrderComparer
+variableOrderComparer variables = cmp
+  where vs = M.fromList $ zip variables [1..]
+        cmp a b = compare (vs M.! a) (vs M.! b)
+
+
+{-
+conjoin :: OBDD -> OBDD -> IO OBDD
+conjoin a b =
+  do ord <- commonVariableOrder a b
+     conjoinWithOrder ord a b
+
+commonVariableOrder a b
+  | order a == order b = return $ order a
+  | otherwise = error "commonVariableOrder..."
+-}
+
+conjoin :: VariableOrderComparer -> [VarId] -> OBDD -> OBDD -> OBDD
+conjoin cmp order a b =
+  let res = conjoin1 cmp order a b
+  in
+   trace ("conjoin\n " ++ prettyShow a ++ "\n " ++ prettyShow b
+          ++ "\n=>\n " ++ prettyShow res)
+   res
+
+conjoin1 cmp order a b =
+  let ((_,rnodes), xentry) = join mkstateInitial (entry a) (entry b)
+  in consObddWithNodes xentry order rnodes
+  where vnn x nid = nodes x M.! nid
+        recur st1 an bn =
+          let (av,al,ar) = vnn a an
+              (bv,bl,br) = vnn b bn
+          in case cmp av bv of
+            EQ -> let (st2, xan) = join st1 al bl
+                      (st3, xbn) = join st2 ar br
+                  in mkNode st3 av xan xbn
+            LT -> let (st2, xan) = join st1 al bn
+                      (st3, xbn) = join st2 ar bn
+                  in mkNode st3 av xan xbn
+            GT -> let (st2, xan) = join st1 an bl
+                      (st3, xbn) = join st2 an br
+                  in mkNode st3 bv xan xbn
+        join st 0 _ = (st, 0)
+        join st _ 0 = (st, 0)
+        join st 1 1 = (st, 1)
+        join st1 1 n = copy st1 b n
+        join st1 n 1 = copy st1 a n
+        join st1 an bn = recur st1 an bn
+        copy st1 _ 0 = (st1, 0)
+        copy st1 _ 1 = (st1, 1)
+        copy st1 o n = -- todo: only copy once???
+          let (v,l,r) = vnn o n
+              (st2,ll) = copy st1 o l
+              (st3,rr) = copy st2 o r
+          in mkNode st3 v ll rr
+
+  
 
 
 printPretty :: Pretty a => a -> IO ()

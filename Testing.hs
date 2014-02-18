@@ -9,6 +9,10 @@ import Data.Maybe ( catMaybes )
 import Dimacs ( Dimacs , Clause , Literal )
 import RandomCNF ( nCNF , threeCNF , fourCNF )
 
+import NQueens
+
+import OBDD ( mkObdd , printPretty )
+
 type Model = S.Set Literal
 
 main = undefined

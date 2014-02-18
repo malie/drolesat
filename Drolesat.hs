@@ -151,6 +151,7 @@ main =
   -- "../sat-2002-beta/submitted/prestwich/mediator/med19.shuffled.cnf"
   -- "../sat-2002-beta/submitted/prestwich/mediator/med30.shuffled.cnf"
   -- "../sat-2002-beta/submitted/pyhala/pyhala-braun-sat-4/pyhala-braun-sat-30-4-01.shuffled.cnf"
+  -- "../sat-2002-beta/submitted/goldberg/bmc1/4.shuffled.cnf"
   where 
     p = -- runDTreeTestFile
         -- printSomeStats

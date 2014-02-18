@@ -1,7 +1,10 @@
 module OBDD ( obddTest
             , mkObdd
             , mkObddWithOrder
+            , mkObddWithOrderX
             , mostOverlapping
+            , mostOccuringVarsFirstHeuristic
+            , mostOccuringPlusNeighboursHeuristic
             , printPretty
             ) where
 
@@ -12,6 +15,7 @@ import qualified Data.Set as S
 import Control.Monad ( foldM )
 import Data.Ord ( comparing )
 import Data.Char ( chr )
+import Debug.Trace ( trace )
 
 -- package 'prettyclass'
 import Text.PrettyPrint.HughesPJClass
@@ -47,17 +51,20 @@ type NodeId = Int
 obddTest :: IndexedCNF -> IO ()
 obddTest ic =
   mapM_ printPretty $
-  -- build mkObdd $
-  build (mkObddWithOrderX globalOrder) $
+  build1 mkObdd $
+  -- build1 (mkObddWithOrderX globalOrder) $
   map mkClauses $ toDimacs ic
   where mkDis clause = Dis (S.fromList $ map abs clause) clause
         mkClauses clause =
           Clauses (S.fromList $ map abs clause) [clause]
-        globalOrder = mostOccuringVarsFirstHeuristic $
+        globalOrder = -- mostOccuringVarsFirstHeuristic $
+                      mostOccuringPlusNeighboursHeuristic $
                       toDimacs ic
 
-build :: ([Clause] -> OBDD) -> [Element] -> [Element]
-build mkobdd es = recur 3 es
+-- use mostOverlapping to first combine those clauses that are
+-- most overlapping in the sense of using the same variables.
+build1 :: ([Clause] -> OBDD) -> [Element] -> [Element]
+build1 mkobdd es = recur 3 es
   where combine1 (Clauses as a) (Clauses bs b) =
           Clauses (S.union as bs) (a ++ b)
         recur 0 es =
@@ -69,28 +76,101 @@ build mkobdd es = recur 3 es
                      [ case ov of
                           Single a -> [a]
                           Pair a b -> [combine1 a b]
-                     | ov <- mostOverlapping evars es ]
+                     | ov <- mov ]
+                     where mov = let x = mostOverlapping evarsL es
+                                 in -- trace (prettyShow x)
+                                    x
+                           evarsL =
+                             S.fromList . take 8 . S.toList . evars
+
+
+-- try to build clusters starting with mid-frequent variables...
+build2 :: ([Clause] -> OBDD) -> [Element] -> [Element]
+build2 mkobdd es = concat $ map make $ part seeds es []
+  where
+    n = 200
+    seeds = take n $ midOutwards $ byVarFrequence es
+    len = max 1 $ length es `div` n
+    part _ [] res = res
+    part [] ys res = res ++ map (\x -> [x]) ys
+    part (x:xs) es res =
+      let (ys0, zs0) =
+            L.partition (\e-> S.member x (evars e)
+                              && S.size (evars e) < 7)
+            es
+          ys = take len ys0
+          zs = drop len ys0 ++ zs0
+      in part xs zs (ys:res)
+    make [Clauses vs [e]] = [Clauses vs [e]]
+    make es =
+      let clauses = concat [ case el of
+                                Clauses _ cs -> cs
+                           | el <- es ]
+      in [ Clauses S.empty clauses
+         , Obdd
+           (S.fromList $ map abs $ concat clauses)
+           (mkobdd clauses)]
+      
+
+byVarFrequence es =
+  map fst $ L.sortBy (comparing snd) $ M.toList $
+  M.unionsWith (+)
+  [ M.fromList $
+    case e of
+      Clauses _ cs -> [ (abs l, 1)
+                      | c <- cs , l <- c]
+      x -> [ (v, 1)
+           | v <- S.toList $ evars x ]
+  | e <- es ]
+
+midOutwards xs = merge (reverse $ take len xs) (drop len xs)
+  where len = length xs `div` 2
+        merge [] bs = bs
+        merge as [] = as
+        merge (a:as) (b:bs) = a : b : merge as bs
 
 
 type Mkstate = (Int, M.Map (VarId,NodeId,NodeId) NodeId)
 
 mkObdd :: [Clause] -> OBDD
 mkObdd cs = mkObddWithOrder
-            (mostOccuringVarsFirstHeuristic cs)
+            -- (mostOccuringVarsFirstHeuristic cs)
+            (mostOccuringPlusNeighboursHeuristic cs)
             cs
             
-
 mostOccuringVarsFirstHeuristic :: [Clause] -> [VarId]
 mostOccuringVarsFirstHeuristic clauses =
   reverse $ map fst $ L.sortBy (comparing snd) $
   M.toList $ M.unionsWith (+)
   [ M.singleton (abs lit) 1 | cl <- clauses , lit <- cl ]
-        
+
+mostOccuringPlusNeighboursHeuristic :: [Clause] -> [VarId]
+mostOccuringPlusNeighboursHeuristic clauses =
+  recur S.empty [] 1
+  where m cs seen =
+          reverse $ map fst $ L.sortBy (comparing snd) $
+          M.toList $ M.unionsWith (+)
+          [ M.singleton var score
+          | cl <- clauses
+          , let vars = map abs cl
+                unseenVars = filter (flip S.notMember seen) vars
+                numSeenVars = length vars - length unseenVars
+                score = 1.0 / fromIntegral (length unseenVars)
+                        + 1 * fromIntegral numSeenVars
+          , var <- unseenVars ]
+        all = S.unions $ [ S.fromList $ map abs c | c <- clauses ]
+        recur seen res _ | all == seen = res
+        recur seen res n =
+          let mo = take (ceiling $ fromIntegral n / 4) $ m clauses seen
+          in recur (S.union seen $ S.fromList mo) (res ++ mo) (succ n)
+
 
 -- build a obdd with a given var order,
 -- but first drop the unneeded variables
 mkObddWithOrderX :: [VarId] -> [Clause] -> OBDD
-mkObddWithOrderX order cs = mkObddWithOrder orderC cs
+mkObddWithOrderX order cs =
+  trace ("using order " ++ show orderC) $
+  mkObddWithOrder orderC cs
   where mentioned = S.fromList $ map abs $ concat cs
         orderC = filter (flip S.member mentioned) order
 
@@ -151,6 +231,9 @@ instance Pretty Element where
   pPrint (Clauses _ cls) =
     flist (flist $ text . show) cls
   pPrint (Obdd _ d) = pPrint d
+
+instance Show Element where
+  show = prettyShow
 
 flist :: (a -> Doc) -> [a] -> Doc
 flist f xs = brackets $ fsep $ recur xs

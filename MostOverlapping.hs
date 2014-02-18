@@ -4,6 +4,10 @@ import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Ord ( comparing )
+import Debug.Trace ( trace )
+
+-- package 'prettyclass'
+import Text.PrettyPrint.HughesPJClass ( text , hang , Pretty , pPrint)
 
 data SP a = Single a | Pair a a
           deriving (Show)
@@ -12,7 +16,7 @@ data SP a = Single a | Pair a a
 -- A list of objects 'a' plus a function to extract a set 'b'
 -- from an object have to be provided.
 -- Pairs are held by a 'Pair', the rest is enclosed in 'Single'.
-mostOverlapping :: (Ord b)
+mostOverlapping :: (Ord b, Show a, Show b)
                    => (a -> S.Set b) -> [a] -> [SP a]
 mostOverlapping ex xs =
   [ Pair a b | ((_, a), (_, b)) <- pairs ]
@@ -31,7 +35,7 @@ type SetId = Int
 -- the pairs occuring deepest, the one with the largest overlap,
 -- are kept, and it is taken care to not use any set more often than
 -- once.
-recur :: (Ord b) =>
+recur :: (Ord b, Show a, Show b) =>
      (a -> S.Set b)
      -> Int
      -> [(SetId, a)]
@@ -45,7 +49,9 @@ recur ex level ys elpred =
           | element <- S.toList $ ex x
           , elpred element ]
         | (id,x) <- ys ]
-  in keepLargestPairs $ concat $ map (pairs level) $
+  in
+   -- trace ("partitions:\n" ++ show partitions)$
+   keepLargestPairs $ concat $ map (pairs level) $
      M.toList partitions
   where
     pairs _ (_, [_]) = []
@@ -82,3 +88,8 @@ keepLargestPairs ps =
 pairSequence :: [a] -> [(a,a)]
 pairSequence (a:b:xs) = (a,b) : pairSequence xs
 pairSequence _ = []
+
+
+instance Pretty a => Pretty (SP a) where
+  pPrint (Single a) = hang (text "Single") 2 $ pPrint a
+  pPrint (Pair a b) = hang (text "Pair") 2 $ pPrint [a,b]

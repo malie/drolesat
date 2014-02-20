@@ -1,7 +1,16 @@
 module Dimacs
        ( VarId, Literal, Clause, Dimacs
-       , readDimacsFile )
+       , readDimacsFile
+       , Model
+       , variableCounts
+       , leastFrequentVariables
+       )
        where
+
+import qualified Data.List as L
+import qualified Data.Map as M
+import qualified Data.Set as S
+import Data.Ord ( comparing )
 
 import Timed ( timedDeepseq )
 
@@ -12,6 +21,8 @@ type VarId = Int
 type Literal = Int
 type Clause = [Literal]
 type Dimacs = [Clause]
+
+type Model = S.Set Literal
 
 readDimacsFile :: String -> IO Dimacs
 readDimacsFile filename =
@@ -28,3 +39,19 @@ readDimacsFile filename =
         dropc (x:xs)       = x : dropc xs
         dropc []           = []
         drop0 = filter (/=0)
+
+
+
+variableCounts :: Dimacs -> M.Map VarId Int
+variableCounts cnf =
+  M.unionsWith (+)
+  [ M.fromList [ (abs lit, 1)
+               | lit <- clause ]
+  | clause <- cnf]
+
+leastFrequentVariables :: Dimacs -> [VarId]
+leastFrequentVariables =
+  map fst
+  . L.sortBy (comparing snd)
+  . M.toList
+  . variableCounts

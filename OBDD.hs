@@ -1,13 +1,21 @@
-module OBDD ( obddTest
+module OBDD ( OBDD , nodes , entry , order
+            , obddTest
             , mkObdd
             , mkObddWithOrder
             , mkObddWithOrderX
             , mostOverlapping
             , mostOccuringVarsFirstHeuristic
             , mostOccuringPlusNeighboursHeuristic
-            , printPretty
             , conjoin
+            , disjoin
+            , restrict
+            , quantifyVariable
             , variableOrderComparer
+            , buildObddByConjoiningClauses
+            , obddEnumerateModels
+            , isTrue
+            , isFalse
+            , obddVars
             ) where
 
 import qualified Data.List as L
@@ -15,6 +23,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 
 import Control.Monad ( foldM )
+import Data.Maybe ( fromMaybe , catMaybes )
 import Data.Ord ( comparing )
 import Data.Char ( chr )
 import Debug.Trace ( trace )
@@ -23,8 +32,9 @@ import Debug.Trace ( trace )
 import Text.PrettyPrint.HughesPJClass
   ( text, fsep, sep, hang, parens, brackets
   , Pretty , pPrint , prettyShow , Doc , comma , (<>))
+import PrettyClassExt ( flist , printPretty )
 
-import Dimacs ( Dimacs , VarId , Clause )
+import Dimacs ( Dimacs , VarId , Clause , Model )
 import IndexedCNF ( IndexedCNF , toDimacs , numClauses
                   , clausesWithVar , clauseLiterals
                   , assign , Sign(..) , fromDimacs , noClauses )
@@ -216,14 +226,16 @@ mkObddWithOrder order cs =
 
 obddTest :: IndexedCNF -> IO ()
 obddTest ic =
-  do mapM_ printPretty $ join $ join $ join initial
+  printPretty $ buildObddByConjoiningClauses $ toDimacs ic
+
+buildObddByConjoiningClauses :: Dimacs -> OBDD
+buildObddByConjoiningClauses cnf = recur initial
   where mkDis clause = Dis (S.fromList $ map abs clause) clause
         obddForSingleClause cl = mkObddWithOrderX globalOrder [cl]
         globalOrder = -- mostOccuringVarsFirstHeuristic $
-                      mostOccuringPlusNeighboursHeuristic $
-                      toDimacs ic
-        initial = map (mkElement . obddForSingleClause) $
-                  toDimacs ic
+                      mostOccuringPlusNeighboursHeuristic
+                      cnf
+        initial = map (mkElement . obddForSingleClause) cnf
         mkElement o@(OBDD _ _ ord) = Obdd (S.fromList ord) o
         varcmp = variableOrderComparer globalOrder
         join es = [ case ov of
@@ -234,6 +246,9 @@ obddTest ic =
                          (eobdd a)
                          (eobdd b)
                   | ov <- mostOverlapping evars es ]
+        recur [e] = eobdd e
+        recur es = recur $ join es
+
 
 type VariableOrderComparer = VarId -> VarId -> Ordering
 
@@ -254,15 +269,15 @@ commonVariableOrder a b
   | otherwise = error "commonVariableOrder..."
 -}
 
-conjoin :: VariableOrderComparer -> [VarId] -> OBDD -> OBDD -> OBDD
-conjoin cmp order a b =
-  let res = conjoin1 cmp order a b
+conjoin' :: VariableOrderComparer -> [VarId] -> OBDD -> OBDD -> OBDD
+conjoin' cmp order a b =
+  let res = conjoin cmp order a b
   in
    trace ("conjoin\n " ++ prettyShow a ++ "\n " ++ prettyShow b
           ++ "\n=>\n " ++ prettyShow res)
    res
 
-conjoin1 cmp order a b =
+conjoin cmp order a b =
   let ((_,rnodes), xentry) = join mkstateInitial (entry a) (entry b)
   in consObddWithNodes xentry order rnodes
   where vnn x nid = nodes x M.! nid
@@ -293,11 +308,138 @@ conjoin1 cmp order a b =
               (st3,rr) = copy st2 o r
           in mkNode st3 v ll rr
 
+{-
+disjoin :: VariableOrderComparer -> [VarId] -> OBDD -> OBDD -> OBDD
+disjoin cmp order a b =
+  let res = disjoin1 cmp order a b
+  in
+   trace ("disjoin\n " ++ prettyShow a ++ "\n " ++ prettyShow b
+          ++ "\n=>\n " ++ prettyShow res)
+   res -}
+
+disjoin cmp order a b =
+  let ((_,rnodes), xentry) = join mkstateInitial (entry a) (entry b)
+  in consObddWithNodes xentry order rnodes
+  where vnn x nid = nodes x M.! nid
+        recur st1 an bn =
+          let (av,al,ar) = vnn a an
+              (bv,bl,br) = vnn b bn
+          in case cmp av bv of
+            EQ -> let (st2, xan) = join st1 al bl
+                      (st3, xbn) = join st2 ar br
+                  in mkNode st3 av xan xbn
+            LT -> let (st2, xan) = join st1 al bn
+                      (st3, xbn) = join st2 ar bn
+                  in mkNode st3 av xan xbn
+            GT -> let (st2, xan) = join st1 an bl
+                      (st3, xbn) = join st2 an br
+                  in mkNode st3 bv xan xbn
+        join st 1 _ = (st, 1)
+        join st _ 1 = (st, 1)
+        join st 0 0 = (st, 0)
+        join st1 0 n = copy st1 b n
+        join st1 n 0 = copy st1 a n
+        join st1 an bn = recur st1 an bn
+        copy st1 _ 0 = (st1, 0)
+        copy st1 _ 1 = (st1, 1)
+        copy st1 o n = -- todo: only copy once???
+          let (v,l,r) = vnn o n
+              (st2,ll) = copy st1 o l
+              (st3,rr) = copy st2 o r
+          in mkNode st3 v ll rr
+
+
+-- how to most easily clean up unreferenced nodes after restrict?
+restrict :: VarId -> Bool -> OBDD -> OBDD
+restrict var value o =
+  minimize
+  OBDD { order = L.delete var $ order o
+       , entry = replaceMaybe $ entry o
+       , nodes = M.fromList
+                 [ (n, (v, replaceMaybe l, replaceMaybe r))
+                 | (n, (v,l,r)) <- M.toList $ nodes o
+                 , v /= var ]}
+  where repl = M.fromList $ catMaybes
+               [ case (v == var, value) of
+                    (True, True) -> Just (n, l)
+                    (True, False) -> Just (n, r)
+                    (False, _) -> Nothing
+               | (n, (v,l,r)) <- M.toList $ nodes o ]
+        replaceMaybe n = fromMaybe n $ M.lookup n repl
+
+minimize o =
+  let (ns, e) = recur (entry o) (M.toList $ nodes o)
+      used = keepUsed (M.fromList ns) e $ S.empty
+      ns2 = [ (n, (v,l,r))
+            | (n, (v,l,r)) <- ns
+            , S.member n used ]
+  in
+   o { nodes = M.fromList ns2
+     , entry = e }
+  where recur e ns =
+          let mods =
+                M.fromList
+                [ (n, l)
+                | (n, (v,l,r)) <- ns
+                , l == r ]
+              replaceMaybe n = fromMaybe n $ M.lookup n mods
+          in if M.null mods
+             then (ns, e)
+             else recur (replaceMaybe e)
+                    [ (n, (v, replaceMaybe l, replaceMaybe r))
+                    | (n, (v,l,r)) <- ns
+                    , not $ M.member n mods ]
+        keepUsed ns n used
+          | n == 0 || n == 1 = used
+          | S.member n used = used
+          | otherwise = let (v,l,r) = ns M.! n
+                            u1 = S.insert n used
+                            u2 = keepUsed ns l u1
+                            u3 = keepUsed ns r u2
+                        in u3
+
+        
+
+
+
+quantifyVariable :: VariableOrderComparer -> [VarId]
+                    -> VarId -> OBDD -> OBDD
+quantifyVariable cmp order var o =
+  disjoin cmp order
+          (restrict var False o)
+          (restrict var True o)
+
+
+-- composition
+
+isTrue, isFalse :: OBDD -> Bool
+isTrue o  = entry o == 1
+isFalse o = entry o == 0
+
+obddVars :: OBDD -> S.Set VarId
+obddVars o =
+  fst $ recur (entry o) S.empty S.empty
+  where
+    recur n usedVars seenNodes
+          | n == 0 || n == 1 || S.member n seenNodes =
+            (usedVars, seenNodes)
+          | otherwise =
+            let (v,l,r) = nodes o M.! n
+                (u1,s1) = (S.insert v usedVars, S.insert n seenNodes)
+                (u2,s2) = recur l u1 s1
+            in recur r u2 s2
+
+obddEnumerateModels :: OBDD -> [Model]
+obddEnumerateModels o = recur S.empty (entry o)
+  where
+    recur _ 0 = []
+    recur model 1 = [model]
+    recur model node =
+      let (v,l,r) = nodes o M.! node
+      in recur (S.insert v model) l
+         ++ recur (S.insert (negate v) model) r
   
 
-
-printPretty :: Pretty a => a -> IO ()
-printPretty = putStrLn . prettyShow
 
 instance Pretty OBDD where
   pPrint (OBDD nodes entry order) =
@@ -318,21 +460,16 @@ instance Pretty OBDD where
            | (node, (var, l, r)) <- M.toList nodes
            , var == v ])
           : desc vs
-    in parens $ sep $ desc order
+    in parens $ case entry of
+                  0 -> text "0"
+                  1 -> text "1"
+                  _ -> sep $ desc order
 
 
 instance Pretty Element where
   pPrint (Dis _ cl) = parens $ fsep $ map (text . show) cl
-  pPrint (Clauses _ cls) =
-    flist (flist $ text . show) cls
+  pPrint (Clauses _ cls) = flist (flist $ text . show) cls
   pPrint (Obdd _ d) = pPrint d
 
 instance Show Element where
   show = prettyShow
-
-flist :: (a -> Doc) -> [a] -> Doc
-flist f xs = brackets $ fsep $ recur xs
-  where recur []     = []
-        recur [x]    = [f x]
-        recur (x:xs) = f x <> comma : recur xs
-

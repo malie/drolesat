@@ -25,6 +25,7 @@ import DTree ( dtreeTest , buildOccurenceTree
              , improveAssignment )
 
 import OBDD ( obddTest )
+import Testing ( printCNFStatsShort , printCNFStats, histogram )
 
 data P = Clause [Literal] [[Literal]]
        | Assignments [S.Set Literal]
@@ -82,51 +83,6 @@ overlaps diid =
                   | (!clid, !lits) <- M.toList diid
                   , !lit <- lits ]
 
-histogram :: (Ord a) => [a] -> [(a, Int)]
-histogram [] = []
-histogram xs = 
-  reverse $
-  L.sortBy (comparing snd) $
-  M.toList $
-  pairwiseFold (M.unionWith (+))
-  [ M.singleton x 1
-  | x <- xs ]
-
-
-pairwiseFold :: (a -> a -> a) -> [a] -> a
-pairwiseFold f [!x] = x
-pairwiseFold f (!a : (!b) : xs) = pairwiseFold f $ redu (a:b:xs)
-  where redu (!a:(!b):xs) = let h = f a b in h `seq` h : redu xs
-        redu xs         = xs
-
-
-printHistogram :: (Ord a, Show a) => [a] -> IO () 
-printHistogram = mapM_ print . histogram
-
-printCNFStatsShort :: Dimacs -> IO ()
-printCNFStatsShort cnf =
-  do putStrLn $ "num clauses: " ++ show (length cnf)
-     let numvars = S.size $ S.fromList $ concat $ map (map abs) cnf
-     putStrLn $ "num vars: " ++ show numvars
-
-printCNFStats :: Dimacs -> IO ()
-printCNFStats cnf =
-  do printCNFStatsShort cnf
-     putStrLn "histogram over clause lengths"
-     putStrLn "  (clause length, count)"
-     printHistogram $ map length cnf
-     putStrLn "histogram over number of variable occurences"
-     putStrLn "  (#var occurences, count)"
-     printHistogram $ map snd $ histogram $ map abs $ concat cnf
-     putStrLn "histogram over number of variable occurences in clauses of length 2"
-     putStrLn "  (#var occurences, count)"
-     pcl 2
-     putStrLn "histogram over number of variable occurences in clauses of length 3"
-     putStrLn "  (#var occurences, count)"
-     pcl 3
-  where pcl n =
-          printHistogram $ map snd $ histogram $ map abs $
-          concat $ filter (\cl -> length cl == n) cnf
 
 setSeed :: Int -> IO ()
 setSeed seed = R.setStdGen $ R.mkStdGen seed
@@ -140,24 +96,26 @@ xxmain =
 main =
   mapM_ p $
   words $
-  "out.cnf"
+  -- "out.cnf"
   -- "E04F19.cnf"
   -- "gss-17-s100.cnf"
   -- "grieu-vmpc-31.cnf"
   -- ++ "ueb11.cnf"
   -- "vmpc_29.cnf"
   -- "partial-10-11-s.cnf"
-  -- "../sat-2002-beta/submitted/prestwich/mediator/med11.shuffled.cnf"
-  -- "../sat-2002-beta/submitted/prestwich/mediator/med19.shuffled.cnf"
-  -- "../sat-2002-beta/submitted/prestwich/mediator/med30.shuffled.cnf"
-  -- "../sat-2002-beta/submitted/pyhala/pyhala-braun-sat-4/pyhala-braun-sat-30-4-01.shuffled.cnf"
-  -- "../sat-2002-beta/submitted/goldberg/bmc1/4.shuffled.cnf"
+  "../sat-2002-beta/submitted/"
+  -- "prestwich/mediator/med11.shuffled.cnf"
+  -- "prestwich/mediator/med19.shuffled.cnf"
+  -- "prestwich/mediator/med30.shuffled.cnf"
+  -- "pyhala/pyhala-braun-sat-4/pyhala-braun-sat-30-4-01.shuffled.cnf"
+  -- "goldberg/bmc1/4.shuffled.cnf"
+  ++ "goldberg/fpga_routing/term1_gr_rcs_w4.shuffled.cnf"
   where 
     p = -- runDTreeTestFile
         -- printSomeStats
-        -- printSomeStats2
-        -- solve
-        runOBDDTestFile
+         printSomeStats2
+      -- solve
+        -- runOBDDTestFile
 
 runDTreeTestFile fn =
   do putStrLn "\n"

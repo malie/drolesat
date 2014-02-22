@@ -1,4 +1,6 @@
-module Testing (main)
+{-# LANGUAGE BangPatterns #-}
+module Testing ( main , printCNFStatsShort , printCNFStats
+               , histogram )
        where
 
 import qualified Data.List as L
@@ -9,7 +11,7 @@ import Data.Maybe ( catMaybes )
 
 import Data.Ord ( comparing )
 
-import Dimacs ( Dimacs , Clause , Literal , Model )
+import Dimacs ( Dimacs , Clause , Literal , Model , readDimacsFile )
 import RandomCNF ( nCNF , threeCNF , fourCNF )
 
 import NQueens ( nqueensDimacs )
@@ -29,12 +31,12 @@ import VariableEliminationOBDD ( variableEliminationOBDD )
 import Text.PrettyPrint.HughesPJClass ( prettyShow )
 import PrettyClassExt ( printPretty )
 
-import IndexedCNF ( fromDimacs )
+import IndexedCNF ( fromDimacs , unitPropagate , toDimacs )
 import DPLL ( dpll
             , mostOftenUsedVarHeuristic
             , momsHeuristic )
 
-main = undefined
+import HypergraphPartitioning ( partition )
 
 -- Enumerate models directly from a cnf. No attempt is made
 -- at finding a good clause order.
@@ -116,5 +118,102 @@ testExistentialQuantification numVars numClauses =
 
 testVariableElimination numVars numClauses =
   do cnf <- threeCNF numVars numClauses
+     putStrLn "cnf:"
      mapM_ print cnf
+     putStrLn "models:"
+     mapM_ printModel =<< enumerateModelsDPLL cnf
      printPretty $ variableEliminationOBDD cnf  
+
+testVariableEliminationFile cnfFile =
+  do c1 <- readDimacsFile cnfFile
+     let Just (c2, _) = unitPropagate $ fromDimacs c1
+     let c3 = toDimacs c2
+     printCNFStats c3
+     printPretty $ variableEliminationOBDD c3
+
+
+pairwiseFold :: (a -> a -> a) -> [a] -> a
+pairwiseFold f [!x] = x
+pairwiseFold f (!a : (!b) : xs) = pairwiseFold f $ redu (a:b:xs)
+  where redu (!a:(!b):xs) = let h = f a b in h `seq` h : redu xs
+        redu xs         = xs
+
+
+histogram :: (Ord a) => [a] -> [(a, Int)]
+histogram [] = []
+histogram xs = 
+  reverse $
+  L.sortBy (comparing snd) $
+  M.toList $
+  pairwiseFold (M.unionWith (+))
+  [ M.singleton x 1
+  | x <- xs ]
+
+printHistogram :: (Ord a, Show a) => [a] -> IO () 
+printHistogram = mapM_ print . histogram
+
+printCNFStatsShort :: Dimacs -> IO ()
+printCNFStatsShort cnf =
+  do putStrLn $ "num clauses: " ++ show (length cnf)
+     let numvars = S.size $ S.fromList $ concat $ map (map abs) cnf
+     putStrLn $ "num vars: " ++ show numvars
+
+printCNFStats :: Dimacs -> IO ()
+printCNFStats cnf =
+  do printCNFStatsShort cnf
+     putStrLn "histogram over clause lengths"
+     putStrLn "  (clause length, count)"
+     printHistogram $ map length cnf
+     putStrLn "histogram over number of variable occurences"
+     putStrLn "  (#var occurences, count)"
+     printHistogram $ map snd $ histogram $ map abs $ concat cnf
+     putStrLn $ "histogram over number of "
+       ++"variable occurences in clauses of length 2"
+     putStrLn "  (#var occurences, count)"
+     pcl 2
+     putStrLn $ "histogram over number of "
+       ++"variable occurences in clauses of length 3"
+     putStrLn "  (#var occurences, count)"
+     pcl 3
+  where pcl n =
+          printHistogram $ map snd $ histogram $ map abs $
+          concat $ filter (\cl -> length cl == n) cnf
+
+
+partitionCNF cnf =
+  do mapM_ print edges
+     print =<< partition edges
+  where
+    edges =
+      map snd $ M.toList $ M.fromListWith (++)
+      [ (var, [node])
+      | (node, vars) <- zip [1..] $ S.toList $ S.fromList $
+                        map (S.fromList . map abs) cnf
+      , var <- S.toList vars ]
+
+cnfFile =
+  -- "out.cnf"
+  "../sat-2002-beta/submitted/"
+  -- ++ "goldberg/fpga_routing/term1_gr_rcs_w3.shuffled.cnf"
+  -- ++ "goldberg/fpga_routing/term1_gr_rcs_w4.shuffled.cnf"
+  -- ++ "goldberg/fpga_routing/term1_gr_2pin_w4.shuffled.cnf"
+  -- ++ "aloul/Bart/bart10.shuffled.cnf"
+  -- ++ "aloul/Homer/homer17.shuffled.cnf"
+  -- ++ "aloul/Bart/bart30.shuffled.cnf"
+  ++ "aloul/Lisa/lisa20_3_a.shuffled.cnf"
+  -- "../sat-2002-beta/generated/"
+  -- ++"gen-3/gen-3.1/glassy-v249-s1767284702.cnf"
+
+testPartition =
+  do c1 <- readDimacsFile cnfFile
+     let Just (c2, _) = unitPropagate $ fromDimacs c1
+     let c3 = toDimacs c2
+     printCNFStats c3
+     -- let c = nqueensDimacs 3
+     partitionCNF c3
+
+
+main =
+  testPartition
+  -- testVariableElimination 40 160
+  -- testVariableEliminationFile cnfFile

@@ -9,6 +9,7 @@ module Random
        , randomDouble
        , randomBoolean
        , randomChoice
+       , randomVectorElement
        , randomVectorElements
        , randomPartition
        ) 
@@ -81,6 +82,11 @@ randomVectorElements :: Int -> V.Vector a -> IO [a]
 randomVectorElements n v =
   do xs <- randomInts n 0 (pred $ V.length v)
      return $ [ v V.! i | i <- xs ]
+
+randomVectorElement :: V.Vector a -> IO a
+randomVectorElement vector =
+  do i <- randomInt 0 (pred $ V.length vector)
+     return $ vector V.! i
 
 -- choose every list element with probability p
 randomPartition :: Double -> [a] -> IO ([a], [a])

@@ -36,7 +36,7 @@ import DPLL ( dpll
             , mostOftenUsedVarHeuristic
             , momsHeuristic )
 
-import HypergraphPartitioning ( partition )
+import HypergraphPartitioning ( partition , partitionMultilevel )
 
 -- Enumerate models directly from a cnf. No attempt is made
 -- at finding a good clause order.
@@ -181,8 +181,10 @@ printCNFStats cnf =
 
 
 partitionCNF cnf =
-  do mapM_ print edges
-     print =<< partition edges
+  do -- mapM_ print edges
+     print =<<
+       partitionMultilevel edges
+       -- partition edges
   where
     edges =
       map snd $ M.toList $ M.fromListWith (++)
@@ -196,19 +198,23 @@ cnfFile =
   "../sat-2002-beta/submitted/"
   -- ++ "goldberg/fpga_routing/term1_gr_rcs_w3.shuffled.cnf"
   -- ++ "goldberg/fpga_routing/term1_gr_rcs_w4.shuffled.cnf"
-  -- ++ "goldberg/fpga_routing/term1_gr_2pin_w4.shuffled.cnf"
+  ++ "goldberg/fpga_routing/term1_gr_2pin_w4.shuffled.cnf"
   -- ++ "aloul/Bart/bart10.shuffled.cnf"
   -- ++ "aloul/Homer/homer17.shuffled.cnf"
   -- ++ "aloul/Bart/bart30.shuffled.cnf"
-  ++ "aloul/Lisa/lisa20_3_a.shuffled.cnf"
+  -- ++ "aloul/Lisa/lisa20_3_a.shuffled.cnf"
+  -- ++ "biere/dinphil/dp06u05.shuffled.cnf"
   -- "../sat-2002-beta/generated/"
   -- ++"gen-3/gen-3.1/glassy-v249-s1767284702.cnf"
+  -- "vmpc_29.cnf"
+  -- "E04F19.cnf"
+  -- "partial-10-11-s.cnf"
 
 testPartition =
   do c1 <- readDimacsFile cnfFile
      let Just (c2, _) = unitPropagate $ fromDimacs c1
      let c3 = toDimacs c2
-     printCNFStats c3
+     printCNFStatsShort c3
      -- let c = nqueensDimacs 3
      partitionCNF c3
 

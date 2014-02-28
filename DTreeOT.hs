@@ -1,4 +1,6 @@
-module DTree
+-- one try at constructing a dtree by an 'occurence tree'
+
+module DTreeOT
        ( dtreeTest
        , buildOccurenceTree
        , reportOccurenceTree

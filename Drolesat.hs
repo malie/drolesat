@@ -19,10 +19,6 @@ import DPLL ( dpll , dpllTimed
             , randomHeuristic , mostOftenUsedVarHeuristic
             , momsHeuristic )
 import Timed ( timed , timedDeepseq )
-import DTree ( dtreeTest , buildOccurenceTree
-             , reportOccurenceTree , testOccurenceTree
-             , randomInitialAssignment , reportAssignment
-             , improveAssignment )
 
 import OBDD ( obddTest )
 import Testing ( printCNFStatsShort , printCNFStats, histogram )
@@ -87,63 +83,30 @@ overlaps diid =
 setSeed :: Int -> IO ()
 setSeed seed = R.setStdGen $ R.mkStdGen seed
 
-xxmain =
-  do setSeed 123
-     cnf <- threeCNF 100 300
-     runDTreeTest cnf
 
 
 main =
   mapM_ p $
   words $
-  -- "out.cnf"
+  "out.cnf"
   -- "E04F19.cnf"
   -- "gss-17-s100.cnf"
   -- "grieu-vmpc-31.cnf"
   -- ++ "ueb11.cnf"
   -- "vmpc_29.cnf"
   -- "partial-10-11-s.cnf"
-  "../sat-2002-beta/submitted/"
+  -- "../sat-2002-beta/submitted/"
   -- "prestwich/mediator/med11.shuffled.cnf"
   -- "prestwich/mediator/med19.shuffled.cnf"
   -- "prestwich/mediator/med30.shuffled.cnf"
   -- "pyhala/pyhala-braun-sat-4/pyhala-braun-sat-30-4-01.shuffled.cnf"
   -- "goldberg/bmc1/4.shuffled.cnf"
-  ++ "goldberg/fpga_routing/term1_gr_rcs_w4.shuffled.cnf"
+  -- ++ "goldberg/fpga_routing/term1_gr_rcs_w4.shuffled.cnf"
   where 
-    p = -- runDTreeTestFile
-        -- printSomeStats
-         printSomeStats2
-      -- solve
-        -- runOBDDTestFile
-
-runDTreeTestFile fn =
-  do putStrLn "\n"
-     print fn
-     d <- readDimacsFile fn
-     runDTreeTest d
-     
-runDTreeTest :: Dimacs -> IO ()
-runDTreeTest d = 
-  do if True
-       then do putStrLn "initial unit clause resolution..."
-               let ic1 = fromDimacs d
-               timedDeepseq "ic" $ return ic1
-               let Just (ic2, as) = unitPropagate ic1
-               timedDeepseq "up" $ return ic2
-               printCNFStatsShort $ toDimacs ic2
-               -- dtreeTest ic2
-               d2 <- randomizeList $ toDimacs ic2
-               let t = buildOccurenceTree d2
-               reportOccurenceTree t
-               testOccurenceTree t $ toDimacs ic2
-               as <- randomInitialAssignment t
-               reportAssignment 3 as
-               void $ improveAssignment 1000 as
-       else do printCNFStatsShort d
-               let t = buildOccurenceTree d
-               reportOccurenceTree t
-               testOccurenceTree t d
+    p = -- printSomeStats
+        -- printSomeStats2
+        -- solve
+        runOBDDTestFile
 
 runOBDDTestFile fn =
   do putStrLn "\n"
@@ -160,7 +123,6 @@ runOBDDTest d =
      timedDeepseq "up" $ return ic2
      printCNFStatsShort $ toDimacs ic2
      obddTest ic2
-
 
 printSomeStats fn =
   do putStrLn "\n"

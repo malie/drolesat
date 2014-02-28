@@ -6,6 +6,9 @@ import qualified Data.Set as S
 type Var = Int
 
 var x y d = d + ((x-1)+(y-1)*9) * 9
+varname x y d =
+  "(" ++ show x ++ show y ++ "=" ++ show d ++ ")"
+
 vnot = negate
 
 type CNF = [[Var]]
@@ -48,7 +51,10 @@ readField w = if w == "_"
 
 sudokuBase :: CNF
 sudokuBase = concat
-             [ cellDigits a b ++ row a b ++ column a b ++ block a b
+             [ cellDigits a b
+               ++ row a b
+               ++ column a b
+               ++ block a b
              | a <- [1..9]
              , b <- [1..9]]
 
@@ -75,13 +81,39 @@ s1 =
   , "_ _ _ _ 3 9 2 5 _"
   , "2 _ 9 4 _ _ _ _ 3" ]
 
+
+-- dropped upper left '1' to make this sudoku underspecified
+s1incomplete :: [String]
+s1incomplete =
+  [ "_ _ _ _ _ 5 3 _ 7"
+  , "_ 9 2 1 4 _ _ _ _"
+  , "_ _ _ 8 _ _ _ _ _"
+  , "_ _ _ _ 7 _ 5 _ 1"
+  , "_ 4 _ _ _ _ _ 7 _"
+  , "5 _ 6 _ 8 _ _ _ _"
+  , "_ _ _ _ _ 6 _ _ _"
+  , "_ _ _ _ 3 9 2 5 _"
+  , "2 _ 9 4 _ _ _ _ 3" ]
+
 printDimacs :: String -> CNF -> IO ()
 printDimacs filename cnf = writeFile filename text
   where text = unlines ls
-        numVariables = S.size $ S.fromList $ concatMap (map abs) cnf
+        allVars = S.fromList $ concatMap (map abs) cnf
+        numVariables = S.size allVars
         numClauses = length cnf
-        header = [unwords ["p cnf", show numVariables, show numClauses]]
-        ls = header ++ map (\clause -> unwords $ map show $ clause ++ [0]) cnf
+        header = [unwords ["p cnf",
+                           show numVariables,
+                           show numClauses]]
+        footer =
+          [ unwords
+            [ "c name"
+            , show v
+            , varname x y d ]
+          | x <- [1..9], y <- [1..9], d <- [1..9]
+          , let v = var x y d
+          , S.member v allVars ]
+        z clause = unwords $ map show $ clause ++ [0]
+        ls = header ++ map z cnf ++ footer
 
 
-main = printDimacs "out.cnf" $ sudoku $ parseSudoku s1
+main = printDimacs "out.cnf" $ sudoku $ parseSudoku s1incomplete

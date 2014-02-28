@@ -6,12 +6,14 @@ module Testing ( main , printCNFStatsShort , printCNFStats
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
+import qualified Data.Vector as V
 import Control.Monad ( foldM )
-import Data.Maybe ( catMaybes )
+import Data.Maybe ( catMaybes , fromMaybe )
 
 import Data.Ord ( comparing )
 
-import Dimacs ( Dimacs , Clause , Literal , Model , readDimacsFile )
+import Dimacs ( Dimacs , Clause , Literal , Model , VarId
+              , readDimacsFile , readDimacsFileAndNames )
 import RandomCNF ( nCNF , threeCNF , fourCNF )
 
 import NQueens ( nqueensDimacs )
@@ -36,7 +38,8 @@ import DPLL ( dpll
             , mostOftenUsedVarHeuristic
             , momsHeuristic )
 
-import HypergraphPartitioning ( partition , partitionMultilevel )
+import HypergraphPartitioning ( partition , partitionMultilevel
+                              , Node )
 
 -- Enumerate models directly from a cnf. No attempt is made
 -- at finding a good clause order.
@@ -180,25 +183,47 @@ printCNFStats cnf =
           concat $ filter (\cl -> length cl == n) cnf
 
 
+
+partitionCNF :: Dimacs -> IO ([VarId], [Clause], [Clause])
 partitionCNF cnf =
-  do -- mapM_ print edges
-     print =<<
-       partitionMultilevel edges
-       -- partition edges
+  do (cutEdges, as, bs) <-
+       -- partition
+       partitionMultilevel
+       edges
+     return
+       ( map evar $ S.toList cutEdges
+       , nodesClauses as
+       , nodesClauses bs )
   where
     edges =
       map snd $ M.toList $ M.fromListWith (++)
       [ (var, [node])
-      | (node, vars) <- zip [1..] $ S.toList $ S.fromList $
-                        map (S.fromList . map abs) cnf
+      | (node, vars) <- idcnf
       , var <- S.toList vars ]
+    idcnf :: [(Int, S.Set VarId)]
+    idcnf = zip [1..] $ M.keys varsToClauses
+    idcnfMap = M.fromList idcnf
+    varsToClauses :: M.Map (S.Set VarId) [Clause]
+    varsToClauses = M.fromListWith (++)
+      [ ( S.fromList $ map abs clause , [clause]) | clause <- cnf ]
+    varsForNodes :: [Node] -> [S.Set VarId]
+    varsForNodes = map (idcnfMap M.!)
+    evar =
+      singleListElement . S.toList .
+      L.foldl1 S.intersection . varsForNodes . V.toList
+    nodesClauses ns = L.concatMap (varsToClauses M.!) $
+                      varsForNodes $ S.toList ns
+
+singleListElement :: [a] -> a
+singleListElement [x] = x
+
 
 cnfFile =
-  -- "out.cnf"
-  "../sat-2002-beta/submitted/"
+  "out.cnf"
+  -- "../sat-2002-beta/submitted/"
   -- ++ "goldberg/fpga_routing/term1_gr_rcs_w3.shuffled.cnf"
   -- ++ "goldberg/fpga_routing/term1_gr_rcs_w4.shuffled.cnf"
-  ++ "goldberg/fpga_routing/term1_gr_2pin_w4.shuffled.cnf"
+  -- ++ "goldberg/fpga_routing/term1_gr_2pin_w4.shuffled.cnf"
   -- ++ "aloul/Bart/bart10.shuffled.cnf"
   -- ++ "aloul/Homer/homer17.shuffled.cnf"
   -- ++ "aloul/Bart/bart30.shuffled.cnf"
@@ -211,12 +236,24 @@ cnfFile =
   -- "partial-10-11-s.cnf"
 
 testPartition =
-  do c1 <- readDimacsFile cnfFile
+  do (c1, names) <- readDimacsFileAndNames cnfFile
      let Just (c2, _) = unitPropagate $ fromDimacs c1
      let c3 = toDimacs c2
      printCNFStatsShort c3
      -- let c = nqueensDimacs 3
-     partitionCNF c3
+     (cv, as, bs) <- partitionCNF c3
+     print $ L.sort $ map (lookupName names) cv
+     putStrLn "as:"
+     mapM_ (printClause names) as
+     putStrLn "bs:"
+     mapM_ (printClause names) bs
+
+printClause names =
+  print . (map $ lookupName names)
+
+lookupName names n
+  | n < 0 = "-" ++ lookupName names (abs n)
+  | otherwise = fromMaybe (show n) $ M.lookup n names
 
 
 main =

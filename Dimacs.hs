@@ -1,6 +1,8 @@
 module Dimacs
        ( VarId, Literal, Clause, Dimacs
        , readDimacsFile
+       , readDimacsFileAndNames
+       , VarName
        , Model
        , variableCounts
        , leastFrequentVariables
@@ -10,12 +12,15 @@ module Dimacs
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
+import Control.Monad ( liftM )
+import Data.Maybe ( mapMaybe )
 import Data.Ord ( comparing )
 
 import Timed ( timedDeepseq )
 
 -- | VarId's are strictly positive
 type VarId = Int
+type VarName = String
 
 -- | Literals can be negative
 type Literal = Int
@@ -25,20 +30,27 @@ type Dimacs = [Clause]
 type Model = S.Set Literal
 
 readDimacsFile :: String -> IO Dimacs
-readDimacsFile filename =
+readDimacsFile = liftM fst . readDimacsFileAndNames
+
+readDimacsFileAndNames :: String -> IO (Dimacs, M.Map VarId VarName)
+readDimacsFileAndNames filename =
   timedDeepseq ("read " ++ filename) $
   do content <- readFile filename
-     return $ 
-       map drop0 $
-       map (map (read :: String -> Int)) $
-       dropc $
-       map words $
-       lines content
+     let theWords = map words $ lines content
+     return
+       ( map drop0 $
+         map (map (read :: String -> Int)) $
+         dropc $ theWords
+       , M.fromList $ mapMaybe rname theWords)
   where dropc (("c":_):xs) = dropc xs
         dropc (("p":_):xs) = dropc xs
         dropc (x:xs)       = x : dropc xs
         dropc []           = []
         drop0 = filter (/=0)
+        rname ("c" : "name" : var : name : _) = Just (read var, name)
+        rname _ = Nothing
+            
+
 
 
 

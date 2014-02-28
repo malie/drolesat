@@ -17,6 +17,8 @@
 module HypergraphPartitioning
        ( partition
        , partitionMultilevel
+       , Node
+       , PartitionResult
        ) where
 
 import qualified Data.List as L
@@ -94,19 +96,27 @@ bestInitialClustering n graph =
          let cl = initialClustering graph r
          return (cl, numberOfCutEdges graph cl)
      
-  
 
-partition :: InputGraph -> IO (S.Set Node)
+partition :: InputGraph -> IO PartitionResult
 partition inputGraph =
   do let graph = neighboursMap inputGraph
      reportNumberOfEdges graph
-     borderRandomWalk graph
+     cl <- borderRandomWalk graph
+     return $ partitionResult graph cl
 
 borderRandomWalk :: Graph -> IO (S.Set Node)
 borderRandomWalk graph =
   do i <- bestInitialClustering 17 graph
      -- print ("initial", i)
      improve graph i 1 (i, 0, 999999)
+
+type PartitionResult = (S.Set Edge, S.Set Node, S.Set Node)
+
+partitionResult :: Graph -> S.Set Node -> PartitionResult
+partitionResult g cl =
+  ( cutEdges g cl
+  , cl
+  , S.difference (M.keysSet g) cl)
 
 nodePartition :: S.Set Node -> Node -> Bool
 nodePartition cl n = S.member n cl
@@ -126,18 +136,18 @@ borderNodes graph cl =
 improve :: Graph -> S.Set Node -> Int -> (S.Set Node, Int, Int)
            -> IO (S.Set Node)
 improve graph cl 400 (bestcl, _, bestcut) =
-  do print("stopping after max number of improve iterations")
+  do print("max number of improve iterations")
      return bestcl -- cl???
 --{-
-improve graph _ _ (bestcl, lastimp, bestcut) | lastimp > 19 =
-  do print("stopping after no improvements for longtime", bestcut)
+improve graph _ _ (bestcl, lastimp, bestcut) | lastimp > 19  =
+  do print("no improvements for long time", bestcut)
      return bestcl
      ---}
 improve graph cl it (bestcl, lastimp, bestcut) =
   do -- print cl
      -- reportClusterBalance graph cl
      let cuts = numberOfCutEdges graph cl
-     print ("cut edges:", cuts)
+     -- print ("cut edges:", cuts)
      let bns = borderNodes graph cl
      -- print ("border nodes:", bns)
      pot <-
@@ -160,7 +170,8 @@ improve graph cl it (bestcl, lastimp, bestcut) =
                    else if it < 60 then 3 else -} 1
          tk = max 1 $ tkn `div` 2
          sf = take tkn $ sort $ take tk (fi 0) ++ take tk (fi 1)
-     --- print ("flipping", map (fst . fst) sf)
+     {-print ("flipping", map fst sf
+           , take 13 $ map (fst . fst) sw)-}
      if null sf
        then return cl
        else improve graph (L.foldl' flip cl sf) (succ it)
@@ -214,8 +225,12 @@ reportNumberOfEdges graph =
          | (_, nodeEdges) <- M.toList graph
          , edge <- V.toList nodeEdges ])
 
-numberOfCutEdges graph cl =
-  length $ S.toList $ S.fromList $ concat
+numberOfCutEdges :: Graph -> S.Set Node -> Int
+numberOfCutEdges graph = length . S.toList . cutEdges graph
+
+cutEdges :: Graph -> S.Set Node -> S.Set Edge
+cutEdges graph cl =
+  S.fromList $ concat
   [ if edgeComplete edge then [] else [edge]
   | (_, nodeEdges) <- M.toList graph
   , edge <- V.toList nodeEdges]
@@ -229,7 +244,7 @@ numberOfCutEdges graph cl =
 type CGraph = V.Vector (S.Set Node)
 
 
-partitionMultilevel :: InputGraph -> IO (S.Set Node)
+partitionMultilevel :: InputGraph -> IO PartitionResult
 partitionMultilevel graph =
   do let cg = graphForCoarsening graph
      cs@((_, coarsest):_) <- liftM reverse $ coarseningSteps cg
@@ -239,9 +254,11 @@ partitionMultilevel graph =
      -- mapM_ print $ map S.toList $ V.toList coarsest
      print("coarsening map sizes:", map (M.size . fst) cs)
      coarsestCl <- borderRandomWalk g
-     expand coarsestCl (zip
-                        (tail (map snd cs) ++ [cg])
-                        (map fst cs))
+     (fg, cl) <- expand coarsestCl
+                 (zip
+                  (tail (map snd cs) ++ [cg])
+                  (map fst cs))
+     return $ partitionResult fg cl
 
 graphForCoarsening :: InputGraph -> CGraph
 graphForCoarsening = V.fromList . map S.fromList
@@ -372,9 +389,9 @@ coarsenMF g =
 
 
 expand :: S.Set Node -> [(CGraph, M.Map Node Node)]
-          -> IO (S.Set Node)
-expand = foldM ex
-  where ex cl (cg, mp) =
+          -> IO (Graph, S.Set Node)
+expand = ex
+  where ex cl ((cg, mp):xs) =
           do let g = cgraphForPartitioning cg
                  nodes = M.keysSet g
                  newNodes = S.difference nodes cl
@@ -383,6 +400,9 @@ expand = foldM ex
                        , Just nn <- [M.lookup n mp]
                        , S.member nn cl]
                  cl2 = S.union cl $ S.fromList ncl
-             improve g cl2 0 (cl2, 0, 999999)
+             cl3 <- improve g cl2 0 (cl2, 0, 999999)
+             if null xs
+               then return (g, cl3)
+               else ex cl3 xs
 
 

@@ -229,7 +229,10 @@ cnfFile =
 
 readFileUP filename =
   do (c1, names) <- readDimacsFileAndNames filename
-     let Just (c2, _) = unitPropagate $ fromDimacs c1
+     let Just (c2, as) = unitPropagate $ fromDimacs c1
+     printPretty ("unit propagation assignments", as)
+     printPretty ("positive unit propagation assignments",
+                  filter (>0) as)
      return $ (toDimacs c2, names)
      
 testPartition =

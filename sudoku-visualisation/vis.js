@@ -12,6 +12,11 @@ function sudokuDigit(x, y) {
     var idx = x + y*9;
     return sudoku[idx]}
 
+var positiveUnitPropagationAssignments =
+    [723, 709, 601, 679, 675, 254, 650, 158, 635, 623, 292, 701, 621,
+     606, 537, 451, 449, 421, 429, 410, 394, 337, 316, 302, 286, 197,
+     121, 109, 101, 99, 79, 57, 50]
+
 var cutset =
    [6, 15, 64, 67, 71, 87, 143, 152, 166, 168, 177, 184, 209, 210,
     217, 220, 226, 229, 246, 251, 264, 314, 327, 332, 333, 345, 372,
@@ -99,6 +104,7 @@ function drawSquare() {
 	line(i*d, 0, i*d, h, lwid)
 	line(0, i*d, w, i*d, lwid)
     }
+    var up = posObject(positiveUnitPropagationAssignments);
     var cs = posObject(cutset);
     var lv = posObject(leftVars);
     var rv = posObject(rightVars);
@@ -109,6 +115,11 @@ function drawSquare() {
 		ctx.fillStyle = 'black';
 		ctx.font = 'normal bold 50px sans-serif'
 		ctx.fillText('' + dig, x*d+d/3, y*d+d*0.7)}
+	    var upd  = up[posObjectKey(x, y)]
+	    if (upd && dig == 0) {
+		ctx.fillStyle = '#e88';
+		ctx.font = 'normal normal 30px sans-serif'
+		ctx.fillText('' + upd, x*d +d*0.1, y*d +d*0.3)}
 	    var csd  = cs[posObjectKey(x, y)]
 	    if (csd) {
 		ctx.fillStyle = '#222';

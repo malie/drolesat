@@ -70,16 +70,23 @@ initialClustering graph seed = grow $ S.singleton seed
     grow cl
       | S.size cl >= half = cl
       | otherwise =
-        -- trace ("grow: " ++ show cl) $
-        grow $ S.union cl $ S.fromList $
-        take (max 1 $ min (S.size cl) (half - S.size cl)) $
-        map fst $ reverse $ L.sortBy (comparing snd) $
-        M.toList $ M.unionsWith (+)
-        [ M.fromList [(e, 1::Int)
-                     | e <- V.toList edge
-                     , S.notMember e cl ]
-        | n <- S.toList cl
-        , edge <- V.toList $ graph M.! n ]
+        case news cl of
+          [] -> cl
+          ns -> grow $ S.union cl $ S.fromList ns
+    news cl =
+      take (max 1 $ min (S.size cl) (half - S.size cl)) $
+      map fst $ reverse $ L.sortBy (comparing snd) $
+      M.toList $ M.unionsWith (+)
+      [ M.fromList [(e, 1::Int)
+                   | e <- V.toList edge
+                   , S.notMember e cl ]
+      | n <- S.toList cl
+      , edge <- V.toList $ graphEdge graph n ]
+
+graphEdge g n =
+  case M.lookup n g of
+    Just e -> e
+    Nothing -> error $ "no such node " ++ show n
 
 tap f x = trace (show $ f x) x
 
@@ -139,7 +146,7 @@ improve graph cl 400 (bestcl, _, bestcut) =
   do print("max number of improve iterations")
      return bestcl -- cl???
 --{-
-improve graph _ _ (bestcl, lastimp, bestcut) | lastimp > 19  =
+improve graph _ _ (bestcl, lastimp, bestcut) | lastimp > 23  =
   do print("no improvements for long time", bestcut)
      return bestcl
      ---}
@@ -196,7 +203,10 @@ improve graph cl it (bestcl, lastimp, bestcut) =
     walk cl _ 0 co0 co1 = return $
                           fromIntegral co1 / fromIntegral (co0+co1)
     walk cl n i co0 co1 =
-      do edge <- randomVectorElement $ graph M.! n
+      do let es = case M.lookup n graph of
+               Just es -> es
+               Nothing -> error $ "no such node " ++ show n
+         edge <- randomVectorElement es
          next <- randomVectorElement edge
          let p = nodePartition cl next
              (d0,d1) = if p then (co0, succ co1) else (succ co0, co1)
@@ -352,9 +362,12 @@ coarsenMF g =
          [ M.singleton a 1
          | edge <- V.toList g
          , a <- S.toList edge ]
+    lookupFrq a = case M.lookup a frq of
+      Just f -> f
+      Nothing -> error $ "no such frq entry " ++ show a
     mff :: [((Node, Node), Double)]
-    mff = [ let af = frq M.! a
-                bf = frq M.! b
+    mff = [ let af = lookupFrq a
+                bf = lookupFrq b
             in ((a,b),
                 c
                 {-(fromIntegral (c * max af bf)

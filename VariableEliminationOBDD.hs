@@ -4,7 +4,10 @@
 -- by Jinbo Huang and Adnan Darwiche
 
 {-# LANGUAGE BangPatterns #-}
-module VariableEliminationOBDD ( variableEliminationOBDD ) where
+module VariableEliminationOBDD
+       ( variableEliminationOBDD
+       , variableEliminationOBDDUsingDTree
+       ) where
 
 import qualified Data.List as L
 import qualified Data.Map as M
@@ -27,6 +30,8 @@ import OBDD ( OBDD
 import PrettyClassExt ( printPretty )
 import Text.PrettyPrint.HughesPJClass ( prettyShow )
 
+import DTreeHGP ( DTree , dtreeVars
+                , DTreevs(DNodevs, DLeafvs), dvars )
 
 
 
@@ -35,15 +40,22 @@ type Bucket = [OBDD]
 
 variableEliminationOBDD :: Dimacs -> (Bool, [(VarId, OBDD)])
 variableEliminationOBDD cnf =
-  eliminate obuckets eliminationOrder []
-  where eliminationOrder = leastFrequentVariables cnf
-        elordIdxMap = M.fromList $ zip eliminationOrder [1..]
+  variableEliminationEOVO
+    cnf
+    (leastFrequentVariables cnf)
+    (mostOccuringPlusNeighboursHeuristic cnf)
+
+
+variableEliminationEOVO
+  :: Dimacs -> [VarId] -> [VarId] -> (Bool, [(VarId, OBDD)])
+variableEliminationEOVO cnf eliminationOrder variableOrder =
+    eliminate obuckets eliminationOrder []
+  where elordIdxMap = M.fromList $ zip eliminationOrder [1..]
         elordIdx = (elordIdxMap M.!)
         varsBucket = L.minimumBy (comparing elordIdx)
         clauseBucket = varsBucket . map abs
         buckets = M.fromListWith (++)
                   [ (clauseBucket cl, [cl]) | cl <- cnf]
-        variableOrder = mostOccuringPlusNeighboursHeuristic cnf
         cmp = variableOrderComparer variableOrder
         obddForSingleClause cl = mkObddWithOrderX variableOrder [cl]
         conjoinX = conjoin cmp variableOrder
@@ -70,3 +82,35 @@ variableEliminationOBDD cnf =
                         (M.insert bu b3 buckets)
                         eliminationOrder
                         btrace2
+
+
+variableEliminationOBDDUsingDTree :: Dimacs -> DTree
+                                     -> (Bool, [(VarId, OBDD)])
+variableEliminationOBDDUsingDTree cnf dt =
+  let eo = eliminationOrderFromDTree dt
+  in
+   trace ("elimination order:\n" ++ prettyShow eo) $
+   trace ("missing vars:\n"
+          ++ prettyShow (S.difference
+                         (S.fromList $ map abs $ concat cnf)
+                         (S.fromList eo))) $
+   trace ("dtreeVars:\n"
+          ++ prettyShow (dtreeVars dt)) $
+  variableEliminationEOVO
+    cnf
+    eo
+    (mostOccuringPlusNeighboursHeuristic cnf)
+
+eliminationOrderFromDTree dt = recur (dtreeVars dt) S.empty
+  where
+    recur (DNodevs vs l r) parentCutset =
+      let vsl = S.difference (dvars l) parentCutset
+          vsr = S.difference (dvars r) parentCutset
+          cutset = (S.intersection vsl vsr)
+          pc = S.union parentCutset cutset
+      in recur r pc
+         ++ recur l pc
+         ++ S.toList cutset
+    recur (DLeafvs vs) parentCutset =
+      S.toList (S.difference vs parentCutset)
+      

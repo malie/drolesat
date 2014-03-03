@@ -28,7 +28,8 @@ import OBDD ( OBDD , order
             , quantifyVariable
             , variableOrderComparer )
 
-import VariableEliminationOBDD ( variableEliminationOBDD )
+import VariableEliminationOBDD ( variableEliminationOBDD
+                               , variableEliminationOBDDUsingDTree )
 
 import Text.PrettyPrint.HughesPJClass ( prettyShow )
 import PrettyClassExt ( printPretty )
@@ -40,6 +41,12 @@ import DPLL ( dpll
 
 import HypergraphPartitioning ( partition , partitionMultilevel
                               , Node )
+
+import DTreeHGP ( dtreeFromDimacs , singleListElement
+                , DTree ( DNode, DLeaf)
+                , printDTreeCutsets)
+
+import Timed ( timed )
 
 -- Enumerate models directly from a cnf. No attempt is made
 -- at finding a good clause order.
@@ -118,22 +125,6 @@ testExistentialQuantification numVars numClauses =
           quantifyVariable cmp ord var o)
        | var <- order o ]
   
-
-testVariableElimination numVars numClauses =
-  do cnf <- threeCNF numVars numClauses
-     putStrLn "cnf:"
-     mapM_ print cnf
-     putStrLn "models:"
-     mapM_ printModel =<< enumerateModelsDPLL cnf
-     printPretty $ variableEliminationOBDD cnf  
-
-testVariableEliminationFile cnfFile =
-  do c1 <- readDimacsFile cnfFile
-     let Just (c2, _) = unitPropagate $ fromDimacs c1
-     let c3 = toDimacs c2
-     printCNFStats c3
-     printPretty $ variableEliminationOBDD c3
-
 
 pairwiseFold :: (a -> a -> a) -> [a] -> a
 pairwiseFold f [!x] = x
@@ -214,12 +205,11 @@ partitionCNF cnf =
     nodesClauses ns = L.concatMap (varsToClauses M.!) $
                       varsForNodes $ S.toList ns
 
-singleListElement :: [a] -> a
-singleListElement [x] = x
-
 
 cnfFile =
   "out.cnf"
+  -- "simple.cnf"
+  -- "wp-cdcl-example.cnf"
   -- "../sat-2002-beta/submitted/"
   -- ++ "goldberg/fpga_routing/term1_gr_rcs_w3.shuffled.cnf"
   -- ++ "goldberg/fpga_routing/term1_gr_rcs_w4.shuffled.cnf"
@@ -229,19 +219,23 @@ cnfFile =
   -- ++ "aloul/Bart/bart30.shuffled.cnf"
   -- ++ "aloul/Lisa/lisa20_3_a.shuffled.cnf"
   -- ++ "biere/dinphil/dp06u05.shuffled.cnf"
+  -- ++ "biere/dinphil/dp02s02.shuffled.cnf"
+  -- ++ "biere/dinphil/dp04s04.shuffled.cnf"
   -- "../sat-2002-beta/generated/"
   -- ++"gen-3/gen-3.1/glassy-v249-s1767284702.cnf"
   -- "vmpc_29.cnf"
   -- "E04F19.cnf"
   -- "partial-10-11-s.cnf"
 
-testPartition =
-  do (c1, names) <- readDimacsFileAndNames cnfFile
+readFileUP filename =
+  do (c1, names) <- readDimacsFileAndNames filename
      let Just (c2, _) = unitPropagate $ fromDimacs c1
-     let c3 = toDimacs c2
-     printCNFStatsShort c3
-     -- let c = nqueensDimacs 3
-     (cv, as, bs) <- partitionCNF c3
+     return $ (toDimacs c2, names)
+     
+testPartition =
+  do (cnf, names) <- readFileUP cnfFile
+     printCNFStatsShort cnf
+     (cv, as, bs) <- partitionCNF cnf
      print $ L.sort $ map (lookupName names) cv
      putStrLn "as:"
      mapM_ (printClause names) as
@@ -255,8 +249,71 @@ lookupName names n
   | n < 0 = "-" ++ lookupName names (abs n)
   | otherwise = fromMaybe (show n) $ M.lookup n names
 
+testDTreeHGP =
+  do (cnf, _) <- readFileUP cnfFile
+     printCNFStatsShort cnf
+     dt <- dtreeFromDimacs cnf
+     printPretty dt
+     return dt
+
+timedDPLL =
+  do (cnf, _) <- readFileUP cnfFile
+     timed "dpll" $
+       do xs <- enumerateModelsDPLL cnf
+          print ("number of solutions", length xs)
+          mapM_ printModel xs
+
+checkAllClausesInDTree cnf dt =
+  do printPretty ("clauses in dtree but not in cnf",
+                  S.difference dtClauses cnfClauses)
+     printPretty ("clauses in cnf but not in dtree",
+                  S.difference cnfClauses dtClauses)
+  where cnfClauses = clauses cnf
+        clauses = S.fromList . map S.fromList
+        dtClauses = dc dt
+        dc (DNode l r) = S.union (dc l) (dc r)
+        dc (DLeaf cs) = clauses cs
+          
+
+testCnf numVars numClauses =
+  do cnf <- threeCNF numVars numClauses
+     putStrLn "cnf:"
+     mapM_ print cnf
+     return cnf
+     
+testVariableElimination cnf =
+  do putStrLn "models:"
+     mapM_ printModel =<< enumerateModelsDPLL cnf
+     printPretty $ variableEliminationOBDD cnf  
+
+testVariableEliminationOnRandom numVars numClauses =
+  do cnf <- testCnf numVars numClauses
+     testVariableElimination cnf
+     putStrLn "\n\nnow the same again, but via dtree:"
+     dt <- dtreeFromDimacs cnf
+     checkAllClausesInDTree cnf dt
+     printPretty $ variableEliminationOBDDUsingDTree cnf dt
+
+testVariableEliminationFile cnfFile =
+  do c1 <- readDimacsFile cnfFile
+     let Just (c2, _) = unitPropagate $ fromDimacs c1
+     let c3 = toDimacs c2
+     printCNFStats c3
+     printPretty $ variableEliminationOBDD c3
+
+testVariableEliminationUsingDTreeFile cnfFile =
+  do (cnf, _) <- readFileUP cnfFile
+     dt <- timed "build dtree by hypergraph partitioning" $
+           dtreeFromDimacs cnf
+     printDTreeCutsets dt
+     checkAllClausesInDTree cnf dt
+     printPretty $ variableEliminationOBDDUsingDTree cnf dt
 
 main =
-  testPartition
-  -- testVariableElimination 40 160
+  -- testPartition
+  -- testDTreeHGP
+  -- timedDPLL
+  -- testVariableEliminationOnRandom 20 70
   -- testVariableEliminationFile cnfFile
+  testVariableEliminationUsingDTreeFile cnfFile
+  

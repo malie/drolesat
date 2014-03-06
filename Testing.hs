@@ -39,8 +39,9 @@ import DPLL ( dpll
             , mostOftenUsedVarHeuristic
             , momsHeuristic )
 
-import HypergraphPartitioning ( partition , partitionMultilevel
-                              , Node )
+import Hypergraph ( Node )
+import HypergraphPartitioning ( partition , partitionMultilevel )
+import KMPartitioning ( kmPartition )
 
 import DTreeHGP ( dtreeFromDimacs , singleListElement
                 , DTree ( DNode, DLeaf)
@@ -208,6 +209,7 @@ partitionCNF cnf =
 
 cnfFile =
   "out.cnf"
+  -- "sudoku-complete.cnf"
   -- "simple.cnf"
   -- "wp-cdcl-example.cnf"
   -- "../sat-2002-beta/submitted/"
@@ -260,11 +262,22 @@ testDTreeHGP =
      return dt
 
 timedDPLL =
-  do (cnf, _) <- readFileUP cnfFile
+  do (cnf, names) <- readFileUP cnfFile
      timed "dpll" $
        do xs <- enumerateModelsDPLL cnf
           print ("number of solutions", length xs)
           mapM_ printModel xs
+          return (xs, names)
+
+timedDPLLAssignmentFrq =
+  do (xs, names) <- timedDPLL
+     printPretty $
+       map (\(l,c) -> (lookupName names l, c)) $
+       L.sortBy (comparing snd) $ M.toList $ M.unionsWith (+)
+       [ M.singleton lit (1::Int)
+       | x <- xs
+       , lit <- S.toList x
+       , lit > 0]
 
 checkAllClausesInDTree cnf dt =
   do printPretty ("clauses in dtree but not in cnf",
@@ -316,6 +329,7 @@ main =
   -- testPartition
   -- testDTreeHGP
   -- timedDPLL
+  -- timedDPLLAssignmentFrq
   -- testVariableEliminationOnRandom 20 70
   -- testVariableEliminationFile cnfFile
   testVariableEliminationUsingDTreeFile cnfFile

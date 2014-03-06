@@ -33,35 +33,13 @@ import Debug.Trace ( trace )
 import Random ( randomListElement , randomVectorElement
               , randomDouble )
 
-type Node = Int
+import Hypergraph
+  ( Node, InputEdge, InputGraph , Edge , Graph
+  , testGraph , neighboursMap , graphEdges
+  , PartitionResult , partitionResult
+  , nodePartition , borderNodes , balance , reportClusterBalance
+  , numberOfCutEdges , cutEdges )
 
--- each Edge connects two or more nodes
-type InputEdge = [Node]
-type InputGraph = [InputEdge]
-
-type Edge = V.Vector Node
-type Graph = M.Map Node (V.Vector Edge)
-
-testGraph :: InputGraph
-testGraph =
-  [ [1,2,3],[1,3,4],[1,9]
-  , [2,3,4],[2,5]
-  , [3,4,5],[3,4,6]
-  , [4,5]
-  , [5,6],[5,7,8],[5,7,9]
-  , [6,7,8]
-  , [7,8],[7,9]
-  , [8,9]]
-
-
-neighboursMap :: InputGraph -> Graph
-neighboursMap graph =
-  M.map V.fromList $
-  M.unionsWith (++)
-  [ M.fromList [(n, [vedge])]
-  | edge <- graph
-  , let vedge = V.fromList edge
-  , n <- edge ]
 
 initialClustering :: Graph -> Node -> S.Set Node
 initialClustering graph seed = grow $ S.singleton seed
@@ -81,12 +59,7 @@ initialClustering graph seed = grow $ S.singleton seed
                    | e <- V.toList edge
                    , S.notMember e cl ]
       | n <- S.toList cl
-      , edge <- V.toList $ graphEdge graph n ]
-
-graphEdge g n =
-  case M.lookup n g of
-    Just e -> e
-    Nothing -> error $ "no such node " ++ show n
+      , edge <- V.toList $ nodeEdges graph n ]
 
 tap f x = trace (show $ f x) x
 
@@ -116,29 +89,6 @@ borderRandomWalk graph =
   do i <- bestInitialClustering 17 graph
      -- print ("initial", i)
      improve graph i 1 (i, 0, 999999)
-
-type PartitionResult = (S.Set Edge, S.Set Node, S.Set Node)
-
-partitionResult :: Graph -> S.Set Node -> PartitionResult
-partitionResult g cl =
-  ( cutEdges g cl
-  , cl
-  , S.difference (M.keysSet g) cl)
-
-nodePartition :: S.Set Node -> Node -> Bool
-nodePartition cl n = S.member n cl
-
-
-borderNodes :: Graph -> S.Set Node -> [Node]
-borderNodes graph cl =
-  S.toList $ S.fromList
-  [ n
-  | (n, edges) <- M.toList graph
-  , let pn = nodePartition cl n
-  , edge <- V.toList edges
-  , neighbour <- V.toList edge
-  , pn /= nodePartition cl neighbour ]
-
 
 improve :: Graph -> S.Set Node -> Int -> (S.Set Node, Int, Int)
            -> IO (S.Set Node)
@@ -212,42 +162,10 @@ improve graph cl it (bestcl, lastimp, bestcut) =
              (d0,d1) = if p then (co0, succ co1) else (succ co0, co1)
          walk cl next (pred i) d0 d1
 
-balance graph cl =
-  let as = fromIntegral $ S.size cl
-      bs = fromIntegral $
-           S.size (S.difference (M.keysSet graph) cl)
-  in as / (as + bs)
-
 checkBalance graph cl =
   let b = balance graph cl
   in (if b > 0.45 then [0] else [])
      ++ if b < 0.55 then [1] else []
-
-reportClusterBalance graph cl =
-  print ("balance:",
-         S.size cl,
-         S.size (S.difference (M.keysSet graph) cl))
-
-reportNumberOfEdges graph =
-  print ("number of edges:",
-         length $ S.toList $ S.fromList
-         [ edge
-         | (_, nodeEdges) <- M.toList graph
-         , edge <- V.toList nodeEdges ])
-
-numberOfCutEdges :: Graph -> S.Set Node -> Int
-numberOfCutEdges graph = length . S.toList . cutEdges graph
-
-cutEdges :: Graph -> S.Set Node -> S.Set Edge
-cutEdges graph cl =
-  S.fromList $ concat
-  [ if edgeComplete edge then [] else [edge]
-  | (_, nodeEdges) <- M.toList graph
-  , edge <- V.toList nodeEdges]
-  where
-    partition n = S.member n cl
-    edgeComplete edge =
-      1 == S.size (S.fromList $ map partition $ V.toList edge)
 
 
 -- graph representation for coarsening

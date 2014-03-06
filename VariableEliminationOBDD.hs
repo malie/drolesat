@@ -69,7 +69,8 @@ variableEliminationEOVO cnf eliminationOrder variableOrder =
             Just b1 ->
               let b2 = quantifyVariable cmp variableOrder var b1
                   btrace2 = (var, b1) : btrace
-              in case (isTrue b2, isFalse b2, obddVars b2) of
+              in trace (prettyShow("elim var", var, b2)) $
+                 case (isTrue b2, isFalse b2, obddVars b2) of
                    (True, _, _) -> eliminate buckets eliminationOrder
                                    btrace2
                    (_, True, _) -> (False, btrace2)

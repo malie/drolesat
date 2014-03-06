@@ -95,6 +95,33 @@ s1incomplete =
   , "_ _ _ _ 3 9 2 5 _"
   , "2 _ 9 4 _ _ _ _ 3" ]
 
+-- from http://www.websudoku.com/?level=4&set_id=4914886965
+s2 :: [String]
+s2 =
+  [ "_ _ _ 3 2 _ _ _ _"
+  , "_ 4 1 _ _ _ _ _ _"
+  , "3 _ 5 _ _ 4 _ _ _"
+  , "6 _ _ _ _ _ 5 2 _"
+  , "4 2 _ 6 _ 5 _ 9 3"
+  , "_ 5 3 _ _ _ _ _ 6"
+  , "_ _ _ 4 _ _ 8 _ 9"
+  , "_ _ _ _ _ _ 7 3 _"
+  , "_ _ _ _ 6 8 _ _ _" ]
+
+s2incomplete :: [String]
+s2incomplete =
+  [ "_ _ _ 3 2 _ _ _ _"
+  , "_ _ _ _ _ _ _ _ _"
+  , "3 _ 5 _ _ 4 _ _ _"
+  , "6 _ _ _ _ _ 5 2 _"
+  , "4 2 _ _ _ 5 _ 9 3"
+  , "_ _ 3 _ _ _ _ _ 6"
+  , "_ _ _ 4 _ _ 8 _ 9"
+  , "_ _ _ _ _ _ 7 3 _"
+  , "_ _ _ _ 6 _ _ _ _" ]
+
+
+
 printDimacs :: String -> CNF -> IO ()
 printDimacs filename cnf = writeFile filename text
   where text = unlines ls

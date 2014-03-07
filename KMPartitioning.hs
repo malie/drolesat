@@ -126,10 +126,11 @@ findNewCenters numClusters frqMap centerSize = reverse $ recur 0 []
               , center == clusterId ]
              ) : res)
 
-kmPartitioningLoop numIterations graph numClusters cs = recur 0 cs
+numLoopIterations = 20
+kmPartitioningLoop graph numClusters cs = recur 0 cs
   where
     recur n cs
-      | n == numIterations = return cs
+      | n == numLoopIterations = return cs
       | otherwise =
         do putStrLn $ "\niteration: " ++ show n
            let dm = distanceMap graph cs
@@ -138,9 +139,10 @@ kmPartitioningLoop numIterations graph numClusters cs = recur 0 cs
                  kmNumberOfCutEdges graph $ distanceMapToClusters dm)
            w <- randomWalkWithinClusters graph dm
            -- printPerCluster numClusters w
+           let nf = div (M.size graph) (5 * numLoopIterations)
            let newCenters =
-                 findNewCenters numClusters w (max 1 (n*5))
-           printPretty newCenters
+                 findNewCenters numClusters w (max 1 (n*nf))
+           -- printPretty newCenters
            recur (succ n) newCenters
 
 
@@ -181,7 +183,7 @@ main =
      let numClusters = 2
      cs <- randomInitialCenters numClusters graph
      printPretty cs
-     kmPartitioningLoop 5 graph numClusters cs
+     kmPartitioningLoop graph numClusters cs
 
 
 -- use 'distanceMap' then toggle border nodes again and again
@@ -220,13 +222,12 @@ swapBorderNodes maxNum graph clusters = recur 0 clusters
     nodesVector = V.fromList $ M.keys graph
 
 
-kmPartition :: InputGraph -> IO PartitionResult
-kmPartition inputGraph =
-  do let graph = neighboursMap inputGraph
-     let numClusters = 2
+kmPartition :: Graph -> IO PartitionResult
+kmPartition graph =
+  do let numClusters = 2
      cs1 <- randomInitialCenters numClusters graph
      -- printPretty cs
-     cs2 <- kmPartitioningLoop 20 graph numClusters cs1
+     cs2 <- kmPartitioningLoop graph numClusters cs1
      let dm = distanceMap graph cs2
      clusters <- swapBorderNodes 10000 graph $ M.map fst dm
      return $

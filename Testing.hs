@@ -39,7 +39,7 @@ import DPLL ( dpll
             , mostOftenUsedVarHeuristic
             , momsHeuristic )
 
-import Hypergraph ( Node )
+import Hypergraph ( Node , neighboursMap , connectedComponents )
 import HypergraphPartitioning ( partition , partitionMultilevel )
 import KMPartitioning ( kmPartition )
 
@@ -175,14 +175,22 @@ printCNFStats cnf =
           concat $ filter (\cl -> length cl == n) cnf
 
 
+largestMap :: [M.Map a b] -> M.Map a b
+largestMap = L.maximumBy (comparing M.size)
+
 
 partitionCNF :: Dimacs -> IO ([VarId], [Clause], [Clause])
 partitionCNF cnf =
-  do (cutEdges, as, bs) <-
+  do let graph1 = neighboursMap edges
+     let components = connectedComponents graph1
+     print("components:", map M.size components)
+     let lc = largestMap components
+     print ("number of nodes in largest component: ", M.size lc)
+     (cutEdges, as, bs) <-
        -- partition
        -- partitionMultilevel
        kmPartition
-       edges
+       lc
      return
        ( map evar $ S.toList cutEdges
        , nodesClauses as
@@ -209,12 +217,12 @@ partitionCNF cnf =
 
 
 cnfFile =
-  -- "out.cnf"
+  "out.cnf"
   -- "sudoku-complete.cnf"
   -- "simple.cnf"
   -- "wp-cdcl-example.cnf"
-  "../sat-2002-beta/submitted/"
-  ++ "goldberg/fpga_routing/term1_gr_rcs_w3.shuffled.cnf"
+  -- "../sat-2002-beta/submitted/"
+  -- ++ "goldberg/fpga_routing/term1_gr_rcs_w3.shuffled.cnf"
   -- ++ "goldberg/fpga_routing/term1_gr_rcs_w4.shuffled.cnf"
   -- ++ "goldberg/fpga_routing/term1_gr_2pin_w4.shuffled.cnf"
   -- ++ "aloul/Bart/bart10.shuffled.cnf"
@@ -327,11 +335,11 @@ testVariableEliminationUsingDTreeFile cnfFile =
      printPretty $ variableEliminationOBDDUsingDTree cnf dt
 
 main =
-  testPartition
+  -- testPartition
   -- testDTreeHGP
   -- timedDPLL
   -- timedDPLLAssignmentFrq
   -- testVariableEliminationOnRandom 20 70
   -- testVariableEliminationFile cnfFile
-  -- testVariableEliminationUsingDTreeFile cnfFile
+  testVariableEliminationUsingDTreeFile cnfFile
   

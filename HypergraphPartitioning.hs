@@ -77,10 +77,9 @@ bestInitialClustering n graph =
          return (cl, numberOfCutEdges graph cl)
      
 
-partition :: InputGraph -> IO PartitionResult
-partition inputGraph =
-  do let graph = neighboursMap inputGraph
-     reportNumberOfEdges graph
+partition :: Graph -> IO PartitionResult
+partition graph =
+  do reportNumberOfEdges graph
      cl <- borderRandomWalk graph
      return $ partitionResult graph cl
 
@@ -172,7 +171,7 @@ checkBalance graph cl =
 type CGraph = V.Vector (S.Set Node)
 
 
-partitionMultilevel :: InputGraph -> IO PartitionResult
+partitionMultilevel :: Graph -> IO PartitionResult
 partitionMultilevel graph =
   do let cg = graphForCoarsening graph
      cs@((_, coarsest):_) <- liftM reverse $ coarseningSteps cg
@@ -188,8 +187,12 @@ partitionMultilevel graph =
                   (map fst cs))
      return $ partitionResult fg cl
 
-graphForCoarsening :: InputGraph -> CGraph
-graphForCoarsening = V.fromList . map S.fromList
+graphForCoarsening :: Graph -> CGraph
+graphForCoarsening graph =
+  V.fromList $ S.toList $ S.fromList
+  [ S.fromList $ V.toList edge
+  | (node, edges) <- M.toList graph
+  , edge <- V.toList edges ]
 
 cgraphForPartitioning :: CGraph -> Graph
 cgraphForPartitioning = neighboursMap . V.toList . V.map S.toList

@@ -4,7 +4,8 @@ module Hypergraph
        , PartitionResult , partitionResult
        , nodePartition , borderNodes
        , balance , reportClusterBalance
-       , reportNumberOfEdges , numberOfCutEdges , cutEdges )
+       , reportNumberOfEdges , numberOfCutEdges , cutEdges
+       , connectedComponents )
        where
 
 import qualified Data.Map as M
@@ -116,4 +117,39 @@ cutEdges graph cl =
     partition n = S.member n cl
     edgeComplete edge =
       1 == S.size (S.fromList $ map partition $ V.toList edge)
+
+
+connectedComponents :: Graph -> [Graph]
+connectedComponents graph =
+  recur M.empty S.empty S.empty []
+  where
+    recur component frontier seen res
+      | S.null frontier =
+        if seen == M.keysSet graph
+        then reverse $ addIfNotEmpty component res
+        else
+          let first = S.findMin $ S.difference (M.keysSet graph) seen
+          in recur M.empty (S.singleton first) seen
+             (addIfNotEmpty component res)
+      | otherwise =
+          recur
+          (M.union component $
+           M.fromList [ (front, nodeEdges graph front)
+                      | front <- S.toList frontier ])
+          (S.fromList
+           [ neighbour
+           | front <- S.toList frontier
+           , edge <- V.toList $ nodeEdges graph front
+           , neighbour <- V.toList edge
+           , S.notMember neighbour seen])
+          (S.union seen frontier)
+          res
+    addIfNotEmpty comp res
+      | M.null comp  = res
+      | otherwise = comp:res
+      
+    
+        
+
+  
 

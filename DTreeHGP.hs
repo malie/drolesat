@@ -17,7 +17,9 @@ import qualified Data.Vector as V
 import Debug.Trace ( trace )
 
 import Dimacs ( Dimacs , Clause , Literal , VarId )
-import HypergraphPartitioning ( partitionMultilevel , Node )
+import Hypergraph ( Node , neighboursMap )
+import HypergraphPartitioning ( partitionMultilevel )
+import KMPartitioning ( kmPartition )
 
 -- package 'prettyclass'
 import Text.PrettyPrint.HughesPJClass
@@ -69,7 +71,10 @@ dtreeFromDimacs = mkdtree S.empty
         do printPretty cnf
            printPretty ("vedges", vedges)
            printPretty ("edges", edges)
-           (!cutEdges, !as, !bs) <- partitionMultilevel edges
+           (!cutEdges, !as, !bs) <-
+             -- partitionMultilevel
+             kmPartition
+             $ neighboursMap edges
            let nice = S.fromList $ concat $
                       map V.toList $ S.toList cutEdges
            printPretty ("nodes in cut edges", nice)

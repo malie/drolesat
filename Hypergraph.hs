@@ -4,7 +4,7 @@ module Hypergraph
        , PartitionResult , partitionResult
        , nodePartition , borderNodes
        , balance , reportClusterBalance
-       , numberOfCutEdges , cutEdges )
+       , reportNumberOfEdges , numberOfCutEdges , cutEdges )
        where
 
 import qualified Data.Map as M

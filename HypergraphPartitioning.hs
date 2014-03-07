@@ -35,10 +35,10 @@ import Random ( randomListElement , randomVectorElement
 
 import Hypergraph
   ( Node, InputEdge, InputGraph , Edge , Graph
-  , testGraph , neighboursMap , graphEdges
+  , testGraph , neighboursMap , nodeEdges
   , PartitionResult , partitionResult
   , nodePartition , borderNodes , balance , reportClusterBalance
-  , numberOfCutEdges , cutEdges )
+  , reportNumberOfEdges , numberOfCutEdges , cutEdges )
 
 
 initialClustering :: Graph -> Node -> S.Set Node

@@ -6,14 +6,14 @@
 -- repeat till clusters change no more.
 -- a random walk is interrupted when a cluster is left.
 
-module KMPartitioning ( kmPartition ) where
+module KMPartitioning ( main , kmPartition ) where
 
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Vector as V
 
-import Control.Monad ( liftM , replicateM , foldM , replicateM )
+import Control.Monad ( liftM , replicateM , foldM )
 import Data.Ord ( comparing )
 import Debug.Trace ( trace )
 
@@ -59,8 +59,14 @@ type DistanceMap = M.Map Node (CenterId, Distance)
 distanceMap :: Graph -> Centers -> DistanceMap
 distanceMap graph centers = recur initialDistanceMap S.empty
   where recur dm done
-          | M.null ns = dm
+          | M.null ns =
+            checkForAllNodesPresent graph dm `seq`
+            dm
+          {-| M.keysSet dm == M.keysSet graph =
+            checkForAllNodesPresent graph dm `seq`
+            dm-}
           | otherwise =
+            trace ("adding #nodes: " ++ show (M.size ns)) $
             recur (M.unionWith closer dm ns) (M.keysSet dm)
           where ns =
                   M.fromList -- no 'With', ignore overlaps, for now...
@@ -69,7 +75,9 @@ distanceMap graph centers = recur initialDistanceMap S.empty
                   , let ndistance = succ distance
                   , S.notMember node done
                   , edge <- V.toList $ nodeEdges graph node
-                  , neighbour <- V.toList edge ]
+                  , neighbour <- V.toList edge
+                  -- , S.notMember neighbour done
+                  ]
                 closer (a, aDistance) (b, bDistance)
                   | aDistance < bDistance = (a, aDistance)
                   | otherwise             = (b, bDistance)
@@ -87,10 +95,8 @@ randomWalkWithinClusters graph distanceMap =
   liftM (M.unionsWith addCounts) $ mapM walk $ M.keys graph
   where walk node =
           do let cl = nodeCluster node
-             as <- recur 7 cl node []
-             bs <- recur 7 cl node []
-             cs <- recur 7 cl node []
-             return $ M.unionsWith addCounts [as, bs, cs]
+             xs <- replicateM 6 (recur 7 cl node [])
+             return $ M.unionsWith addCounts xs
              
         recur 0 _ _ path = return $ M.fromListWith addCounts path
         recur n cl node path =
@@ -101,7 +107,10 @@ randomWalkWithinClusters graph distanceMap =
                then recur 0 cl node $ drop 2 path
                else recur (pred n) cl neighbour $
                     (neighbour, (cl, 1)) : path
-        nodeCluster n = fst $ distanceMap M.! n
+        -- nodeCluster n = fst $ distanceMap M.! n
+        nodeCluster n = case M.lookup n distanceMap of
+          Nothing -> error ("rwwc didn't find node " ++ show n) (-1)
+          Just x -> fst x
         addCounts (center, count1) (_,count2) = (center, count1+count2)
 
 
@@ -132,25 +141,42 @@ kmPartitioningLoop numIterations graph numClusters cs = recur 0 cs
         do putStrLn $ "\niteration: " ++ show n
            let dm = distanceMap graph cs
            -- printPerCluster numClusters dm
-           print("number of cut edges:", kmNumberOfCutEdges graph dm)
+           checkForAllNodesPresent graph dm `seq` return ()
+           print("number of cut edges:",
+                 kmNumberOfCutEdges graph $ distanceMapToClusters dm)
            w <- randomWalkWithinClusters graph dm
            -- printPerCluster numClusters w
            let newCenters =
-                 findNewCenters numClusters w (max 1 n)
+                 findNewCenters numClusters w (max 1 (n*5))
            printPretty newCenters
            recur (succ n) newCenters
 
-kmNumberOfCutEdges :: Graph -> DistanceMap -> Int
+checkForAllNodesPresent :: Graph -> DistanceMap -> ()
+checkForAllNodesPresent graph dm =
+  let ms = M.keysSet graph `S.difference` M.keysSet dm
+  in if S.null ms
+     then ()
+     else error $ prettyShow ("missing nodes in dm", ms)
+
+
+type Clusters = M.Map Node CenterId
+
+distanceMapToClusters :: DistanceMap -> Clusters
+distanceMapToClusters = M.map fst
+
+kmNumberOfCutEdges :: Graph -> Clusters -> Int
 kmNumberOfCutEdges graph = length . S.toList . kmCutEdges graph
 
-kmCutEdges :: Graph -> DistanceMap -> S.Set Edge
-kmCutEdges graph dm =
+kmCutEdges :: Graph -> Clusters -> S.Set Edge
+kmCutEdges graph cs =
   S.fromList $ concat
   [ if edgeComplete edge then [] else [edge]
   | (_, nodeEdges) <- M.toList graph
   , edge <- V.toList nodeEdges]
   where
-    partition n = fst $ dm M.! n
+    partition n = case M.lookup n cs of
+      Nothing -> error ("kmce didn't find node " ++ show n) (-1)
+      Just x -> x
     edgeComplete edge =
       1 == S.size (S.fromList $ map partition $ V.toList edge)
 
@@ -172,11 +198,55 @@ main =
      printPretty cs
      kmPartitioningLoop 5 graph numClusters cs
 
+
+-- use 'distanceMap' then toggle border nodes again and again
+-- till minimal cut edges?
+partitionCarefully graph centers = undefined
+
+swapBorderNodes :: Int -> Graph -> Clusters -> IO Clusters
+swapBorderNodes maxNum graph clusters = recur 0 clusters
+  where
+    recur num cs
+      | num == maxNum = return cs
+      |otherwise =
+        do n <- randomVectorElement nodesVector
+           let neighboursClusters =
+                 M.unionsWith (+)
+                 [ M.singleton (cs M.! neighbour)
+                   (1 / (fromIntegral $ V.length edge))
+                 | edge <- V.toList $ nodeEdges graph n
+                 , neighbour <- V.toList edge]
+           if M.size neighboursClusters < 2
+             then recur num cs
+             else do let mx = fst $ L.maximumBy (comparing snd) $
+                              M.toList neighboursClusters
+                         ocl = cs M.! n
+                     if mx == ocl
+                       then recur (succ num) cs
+                       else do
+                         putStrLn $ concat
+                           ["switching node ", show n,
+                            " from " , show $ ocl,
+                            " to ", show mx ]
+                         let cs2 = M.insert n mx cs
+                         print("number of cut edges:",
+                               kmNumberOfCutEdges graph cs2)
+                         recur 0 cs2
+    nodesVector = V.fromList $ M.keys graph
+
+
 kmPartition :: InputGraph -> IO PartitionResult
-kmPartition inputGraph = undefined
-{-
+kmPartition inputGraph =
   do let graph = neighboursMap inputGraph
-     reportNumberOfEdges graph
-     
-     return $ partitionResult graph cl
--}
+     let numClusters = 2
+     cs1 <- randomInitialCenters numClusters graph
+     -- printPretty cs
+     cs2 <- kmPartitioningLoop 20 graph numClusters cs1
+     let dm = distanceMap graph cs2
+     clusters <- swapBorderNodes 10000 graph $ M.map fst dm
+     return $
+       partitionResult graph $
+       S.fromList $
+       [ node
+       | (node, centerId) <- M.toList clusters
+       , centerId == 0 ]

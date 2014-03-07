@@ -180,7 +180,8 @@ partitionCNF :: Dimacs -> IO ([VarId], [Clause], [Clause])
 partitionCNF cnf =
   do (cutEdges, as, bs) <-
        -- partition
-       partitionMultilevel
+       -- partitionMultilevel
+       kmPartition
        edges
      return
        ( map evar $ S.toList cutEdges
@@ -208,12 +209,12 @@ partitionCNF cnf =
 
 
 cnfFile =
-  "out.cnf"
+  -- "out.cnf"
   -- "sudoku-complete.cnf"
   -- "simple.cnf"
   -- "wp-cdcl-example.cnf"
-  -- "../sat-2002-beta/submitted/"
-  -- ++ "goldberg/fpga_routing/term1_gr_rcs_w3.shuffled.cnf"
+  "../sat-2002-beta/submitted/"
+  ++ "goldberg/fpga_routing/term1_gr_rcs_w3.shuffled.cnf"
   -- ++ "goldberg/fpga_routing/term1_gr_rcs_w4.shuffled.cnf"
   -- ++ "goldberg/fpga_routing/term1_gr_2pin_w4.shuffled.cnf"
   -- ++ "aloul/Bart/bart10.shuffled.cnf"
@@ -232,7 +233,7 @@ cnfFile =
 readFileUP filename =
   do (c1, names) <- readDimacsFileAndNames filename
      let Just (c2, as) = unitPropagate $ fromDimacs c1
-     printPretty ("unit propagation assignments", as)
+     -- printPretty ("unit propagation assignments", as)
      printPretty ("positive unit propagation assignments",
                   filter (>0) as)
      return $ (toDimacs c2, names)
@@ -242,10 +243,10 @@ testPartition =
      printCNFStatsShort cnf
      (cv, as, bs) <- partitionCNF cnf
      print $ L.sort $ map (lookupName names) cv
-     putStrLn "as:"
+     {-putStrLn "as:"
      mapM_ (printClause names) as
      putStrLn "bs:"
-     mapM_ (printClause names) bs
+     mapM_ (printClause names) bs-}
 
 printClause names =
   print . (map $ lookupName names)
@@ -326,11 +327,11 @@ testVariableEliminationUsingDTreeFile cnfFile =
      printPretty $ variableEliminationOBDDUsingDTree cnf dt
 
 main =
-  -- testPartition
+  testPartition
   -- testDTreeHGP
   -- timedDPLL
   -- timedDPLLAssignmentFrq
   -- testVariableEliminationOnRandom 20 70
   -- testVariableEliminationFile cnfFile
-  testVariableEliminationUsingDTreeFile cnfFile
+  -- testVariableEliminationUsingDTreeFile cnfFile
   

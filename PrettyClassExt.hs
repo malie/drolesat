@@ -6,6 +6,7 @@ import Text.PrettyPrint.HughesPJClass
 
 import qualified Data.Set as S
 import qualified Data.Map as M
+import qualified Data.Vector as V
 
 flist :: (a -> Doc) -> [a] -> Doc
 flist f xs = brackets $ fsep $ recur xs
@@ -25,3 +26,7 @@ instance (Pretty a, Pretty b) =>
          Pretty (M.Map a b) where
   pPrint set = hang (text "M.fromList") 2 $
                flist pPrint $ M.toList set
+
+instance Pretty a => Pretty (V.Vector a) where
+  pPrint set = hang (text "V.fromList") 2 $
+               flist pPrint $ V.toList set

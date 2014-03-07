@@ -60,13 +60,8 @@ distanceMap :: Graph -> Centers -> DistanceMap
 distanceMap graph centers = recur initialDistanceMap S.empty
   where recur dm done
           | M.null ns =
-            checkForAllNodesPresent graph dm `seq`
             dm
-          {-| M.keysSet dm == M.keysSet graph =
-            checkForAllNodesPresent graph dm `seq`
-            dm-}
           | otherwise =
-            trace ("adding #nodes: " ++ show (M.size ns)) $
             recur (M.unionWith closer dm ns) (M.keysSet dm)
           where ns =
                   M.fromList -- no 'With', ignore overlaps, for now...
@@ -75,9 +70,7 @@ distanceMap graph centers = recur initialDistanceMap S.empty
                   , let ndistance = succ distance
                   , S.notMember node done
                   , edge <- V.toList $ nodeEdges graph node
-                  , neighbour <- V.toList edge
-                  -- , S.notMember neighbour done
-                  ]
+                  , neighbour <- V.toList edge ]
                 closer (a, aDistance) (b, bDistance)
                   | aDistance < bDistance = (a, aDistance)
                   | otherwise             = (b, bDistance)
@@ -141,7 +134,6 @@ kmPartitioningLoop numIterations graph numClusters cs = recur 0 cs
         do putStrLn $ "\niteration: " ++ show n
            let dm = distanceMap graph cs
            -- printPerCluster numClusters dm
-           checkForAllNodesPresent graph dm `seq` return ()
            print("number of cut edges:",
                  kmNumberOfCutEdges graph $ distanceMapToClusters dm)
            w <- randomWalkWithinClusters graph dm
@@ -150,13 +142,6 @@ kmPartitioningLoop numIterations graph numClusters cs = recur 0 cs
                  findNewCenters numClusters w (max 1 (n*5))
            printPretty newCenters
            recur (succ n) newCenters
-
-checkForAllNodesPresent :: Graph -> DistanceMap -> ()
-checkForAllNodesPresent graph dm =
-  let ms = M.keysSet graph `S.difference` M.keysSet dm
-  in if S.null ms
-     then ()
-     else error $ prettyShow ("missing nodes in dm", ms)
 
 
 type Clusters = M.Map Node CenterId

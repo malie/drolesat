@@ -1,4 +1,4 @@
-module OBDD ( OBDD , nodes , entry , order
+module OBDD ( OBDD(..)
             , obddTest
             , mkObdd
             , mkObddWithOrder
@@ -16,6 +16,8 @@ module OBDD ( OBDD , nodes , entry , order
             , isTrue
             , isFalse
             , obddVars
+            , NodeId
+            , nodeIdToName
             ) where
 
 import qualified Data.List as L
@@ -440,23 +442,27 @@ obddEnumerateModels o = recur S.empty (entry o)
          ++ recur (S.insert (negate v) model) r
   
 
+nodeIdToName 0 = "0"
+nodeIdToName 1 = "1"
+nodeIdToName x = recur $ x - 2
+  where
+    recur x
+      | x > 25    = recur (x `div` 26)
+                    ++ [letter $ x `mod` 26]
+      | otherwise = [letter x]
+    letter x = chr $ 97 + x
+        
 
 instance Pretty OBDD where
   pPrint (OBDD nodes entry order) =
-    let nd 0 = "0"
-        nd 1 = "1"
-        nd x = recur $ x - 2
-        recur x
-          | x > 25    = recur (x `div` 26)
-                        ++ [letter $ x `mod` 26]
-          | otherwise = [letter x]
-        letter x = chr $ 97 + x
-        desc [] = []
+    let desc [] = []
         desc (v:vs) =
           (fsep
            [ text $
-             nd node ++ "="
-             ++ show var ++ "->" ++ nd l ++ ";" ++ nd r
+             nodeIdToName node ++ "="
+             ++ show var ++ "->"
+             ++ nodeIdToName l ++ ";"
+             ++ nodeIdToName r
            | (node, (var, l, r)) <- M.toList nodes
            , var == v ])
           : desc vs

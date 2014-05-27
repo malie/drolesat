@@ -1,6 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 module Testing ( main , printCNFStatsShort , printCNFStats
-               , histogram )
+               , histogram , enumerateModels)
        where
 
 import qualified Data.List as L

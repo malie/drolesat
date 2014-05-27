@@ -1,16 +1,23 @@
 module Hypergraph
        ( Node, InputEdge, InputGraph , Edge , Graph
-       , testGraph , neighboursMap , nodeEdges , allNeighboursAsSet
+       , testGraph , testGraph2
+       , neighboursMap , nodeEdges , allNeighboursAsSet
        , PartitionResult , partitionResult
        , nodePartition , borderNodes
        , balance , reportClusterBalance
-       , reportNumberOfEdges , numberOfCutEdges , cutEdges
-       , connectedComponents )
+       , reportNumberOfEdges , numberOfEdges
+       , numberOfCutEdges , cutEdges
+       , connectedComponents , allEdges
+       , randomGraph )
        where
 
+import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Vector as V
+
+import Random ( randomListElement , randomChoice )
+import Control.Monad ( liftM , replicateM )
 
 type Node = Int
 
@@ -37,11 +44,17 @@ testGraph =
   , [13, 14], [13, 14, 15]
   , [14, 15]
   , [15, 16]
-
-  , [1, 14], [1, 12]
+  -- , [1, 14], [1, 12]
   -- , [4, 12], [5, 13], [7, 16]
   ]
 
+testGraph2 :: InputGraph
+testGraph2 =
+  [[27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 14, 13, 12, 8, 4, 3],
+   [42, 41, 40, 39, 38, 37, 36, 29, 28, 16, 15, 2, 1],
+   [46, 45, 44, 43, 40, 39, 33, 30, 24, 22, 7, 6],
+   [52, 51, 50, 49, 48, 47, 44, 41, 40, 34, 31, 25, 22, 9, 5, 3],
+   [56, 55, 54, 53, 51, 45, 42, 40, 35, 32, 26, 22, 11, 10]]
 
 neighboursMap :: InputGraph -> Graph
 neighboursMap graph =
@@ -49,7 +62,7 @@ neighboursMap graph =
   M.unionsWith (++)
   [ M.fromList [(n, [vedge])]
   | edge <- graph
-  , let vedge = V.fromList edge
+  , let vedge = V.fromList $ L.sort edge
   , n <- edge ]
 
 
@@ -98,11 +111,30 @@ reportClusterBalance graph cl =
          S.size (S.difference (M.keysSet graph) cl))
 
 reportNumberOfEdges graph =
-  print ("number of edges:",
-         length $ S.toList $ S.fromList
-         [ edge
-         | (_, nodeEdges) <- M.toList graph
-         , edge <- V.toList nodeEdges ])
+  print ("number of edges:", numberOfEdges graph)
+
+numberOfEdges :: Graph -> Int
+numberOfEdges graph =
+  length $ allEdges graph
+
+allEdges :: Graph -> [Edge]
+allEdges graph =
+  S.toList $ S.fromList
+  [ edge
+  | (_, nodeEdges) <- M.toList graph
+  , edge <- V.toList nodeEdges ]
+
+---- graphNumEdges :: Graph -> Int
+---- graphNumEdges =
+----   S.size . S.fromList
+----   . map (S.fromList . V.toList)
+----   -- [ Edge ]
+----   . V.toList . V.concat
+----   -- [ V.Vector Edge ]
+----   . map snd
+----   . M.toList
+  
+
 
 numberOfCutEdges :: Graph -> S.Set Node -> Int
 numberOfCutEdges graph = length . S.toList . cutEdges graph
@@ -147,9 +179,35 @@ connectedComponents graph =
     addIfNotEmpty comp res
       | M.null comp  = res
       | otherwise = comp:res
-      
-    
-        
 
-  
+
+
+
+-- fancy random graph generation
+randomGraph :: IO InputGraph
+randomGraph = liftM concat $ mapM gen degreeCounts
+  where
+    degreeCounts = [ (5, 0.1)
+                   , (4, 0.15)
+                   , (3, 0.2)
+                   , (2, 0.5)]
+    numNodes = 50
+    gen (count, fraction) =
+      do let n = round $ fromIntegral numNodes * fraction
+         replicateM n $ randomListElementsX count [1 .. numNodes]
+
+-- with probability 1/2 from first 10 list elements
+-- with probability 3/4 from first 20 list elements
+randomListElementsX :: Int -> [a] -> IO [a]
+randomListElementsX n list = recur n []
+  where
+    recur 0 res = return $ reverse res
+    recur n res =
+      do a <- randomChoice
+                (randomChoice
+                  (randomListElement (take 10 list))
+                  (randomListElement (take 20 list)))
+                (randomListElement list)
+         recur (pred n) (a:res)
+     
 

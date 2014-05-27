@@ -217,12 +217,12 @@ partitionCNF cnf =
 
 
 cnfFile =
-  "out.cnf"
+  -- "out.cnf"
   -- "sudoku-complete.cnf"
   -- "simple.cnf"
   -- "wp-cdcl-example.cnf"
-  -- "../sat-2002-beta/submitted/"
-  -- ++ "goldberg/fpga_routing/term1_gr_rcs_w3.shuffled.cnf"
+  "../sat-2002-beta/submitted/"
+  ++ "goldberg/fpga_routing/term1_gr_rcs_w3.shuffled.cnf"
   -- ++ "goldberg/fpga_routing/term1_gr_rcs_w4.shuffled.cnf"
   -- ++ "goldberg/fpga_routing/term1_gr_2pin_w4.shuffled.cnf"
   -- ++ "aloul/Bart/bart10.shuffled.cnf"

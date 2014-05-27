@@ -7,19 +7,22 @@ module DTreeHGP ( dtreeFromDimacs
                 , DTreevs ( DNodevs , DLeafvs )
                 , dvars
                 , printDTreeCutsets
+                , partitionCarefully , neighboursMap
                 ) where
 
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Vector as V
+import Data.Ord ( comparing )
 
 import Debug.Trace ( trace )
 
 import Dimacs ( Dimacs , Clause , Literal , VarId )
-import Hypergraph ( Node , neighboursMap )
+import Hypergraph ( Graph , PartitionResult , partitionResult
+                  , Node , neighboursMap , connectedComponents )
 import HypergraphPartitioning ( partitionMultilevel )
-import KMPartitioning ( kmPartition )
+import KMPartitioning ( kmPartition , partitionCarefully )
 
 -- package 'prettyclass'
 import Text.PrettyPrint.HughesPJClass
@@ -72,9 +75,7 @@ dtreeFromDimacs = mkdtree S.empty
            printPretty ("vedges", vedges)
            printPretty ("edges", edges)
            (!cutEdges, !as, !bs) <-
-             -- partitionMultilevel
-             kmPartition
-             $ neighboursMap edges
+             partitionCarefully $ neighboursMap edges
            let nice = S.fromList $ concat $
                       map V.toList $ S.toList cutEdges
            printPretty ("nodes in cut edges", nice)

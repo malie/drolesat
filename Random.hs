@@ -9,6 +9,7 @@ module Random
        , randomDouble
        , randomBoolean
        , randomChoice
+       , randomChoice'
        , randomVectorElement
        , randomVectorElements
        , randomPartition
@@ -76,6 +77,10 @@ randomBoolean = R.getStdRandom (R.randomR (False, True))
 
 randomChoice a b = do r <- randomBoolean
                       if r then a else b
+
+randomChoice' probability a b =
+  do r <- randomDouble 0.0 1.0
+     if r > probability then a else b
 
 
 randomVectorElements :: Int -> V.Vector a -> IO [a]
